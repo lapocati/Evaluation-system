@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build outputs
+dist/
+.vite/
+*.tsbuildinfo
+vite.config.d.ts
+vite.config.js
+
+# Environment & secrets
+.env
+.env.*
+*.pem
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
