@@ -1,5 +1,9 @@
-import type { Branch, ConversationStatus, ScoringCriteria, TurnRole } from '../types';
+import type { Branch, ConversationStatus, ScoringCriteria, Turn, TurnRole } from '../types';
 import { useAppStore } from '../store/useAppStore';
+
+function countAgentTurns(turns: Turn[]): number {
+  return turns.filter((t) => t.role === 'agent').length;
+}
 
 interface StartParams {
   branch: Branch;
@@ -18,7 +22,7 @@ export function abortBranch(branchId: string) {
   c.abort();
   const store = useAppStore.getState();
   const conv = store.conversations[branchId];
-  store.finishConversation(branchId, 'user_aborted', conv?.turns.length ?? 0);
+  store.finishConversation(branchId, 'user_aborted', countAgentTurns(conv?.turns ?? []));
 }
 
 export function runBranchSimulation(params: StartParams) {

@@ -14,6 +14,10 @@ function toBackendStatus(s: Conversation['status']): string {
   return s;
 }
 
+function countAgentTurns(turns: Conversation['turns']): number {
+  return turns.filter((t) => t.role === 'agent').length;
+}
+
 export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
   const store = useAppStore.getState();
   const branchId = params.branch.id;
@@ -31,7 +35,7 @@ export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
         .map((t) => ({ turn: t.turn, role: t.role, text: t.text })),
       status: toBackendStatus(params.conversation.status),
       total_turns:
-        params.conversation.totalTurns ?? params.conversation.turns.length,
+        params.conversation.totalTurns ?? countAgentTurns(params.conversation.turns),
     },
   };
 

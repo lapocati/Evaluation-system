@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.llm.deepseek import DeepSeekError, chat
 from app.prompts.parser import build_parser_messages
 from app.schemas import ParseRequest, ParseResponse
+from app.scoring.criteria_normalize import normalize_scoring_criteria
 
 logger = logging.getLogger("dialogeval.parse")
 logger.setLevel(logging.INFO)
@@ -36,7 +37,8 @@ async def parse_instruction(req: ParseRequest) -> ParseResponse:
         )
 
     try:
-        return ParseResponse(**data)
+        result = ParseResponse(**data)
+        return normalize_scoring_criteria(result)
     except Exception as e:
         logger.error("schema_invalid: %s\nraw=%s", e, raw)
         raise HTTPException(

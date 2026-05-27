@@ -118,8 +118,8 @@ export default function SimulatePage() {
         {conversation.turns.length === 0 && (
           <div className="text-center text-sm text-slate-400 py-8">等待数字人开场…</div>
         )}
-        {conversation.turns.map((t) => (
-          <ChatBubble key={t.turn} turn={t} />
+        {conversation.turns.map((t, i) => (
+          <ChatBubble key={`${t.turn}-${t.role}-${i}`} turn={t} />
         ))}
       </div>
     </div>

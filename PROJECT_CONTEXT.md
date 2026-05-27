@@ -143,8 +143,8 @@ evaluation system/
 **复用规则：**
 
 - `BranchCard`：用于 `/branches` 列表的卡片，承载"运行/查看/报告"三个回调。
-- `ChatBubble`：流式气泡，根据 `turn.done` 决定是否渲染闪烁光标。
-- `StatusPanel`：状态徽章 + 轮次进度，硬上限 = `Math.ceil(estimated × 1.5)`。
+- `ChatBubble`：流式气泡；agent 显示「第 N 轮 · 数字人」，user 仅显示「用户」；根据 `turn.done` 决定是否渲染闪烁光标。
+- `StatusPanel`：状态徽章 + **agent 轮次**进度（非消息条数），硬上限 = `Math.ceil(estimated × 1.5)`（作用于 agent 轮数）。
 - `ScoreRadar`：5 维 recharts 雷达，固定颜色 `#4f46e5`（stroke）/ `#6366f1`（fill）。
 - `DimensionAccordion`：4 维评分维度 + 效率，单 source-of-truth 用于报告详情展开。
 - `LoadingPanel` / `ErrorPanel` / `ReportBody`：**仅** `ReportPage` 内部使用的私有子组件，**不要**抽到 `components/`。
@@ -192,15 +192,17 @@ evaluation system/
 - Loading 时 spinner + 文案"10–30 秒"。
 - Error 时显示重试按钮，重试只重发 evaluate。
 
-### 4.5 SSE 事件协议（前后端约定，禁止改）
+### 4.5 SSE 事件协议（前后端约定，禁止改事件名）
+
+**轮数语义：** 一问一答为一轮，agent 每次发言时轮数 +1；SSE `turn` 字段即轮数（user 消息继承所属轮数，与当轮 agent 相同）。`done.total_turns` = agent 发言次数。
 
 | event | data | 触发动作 |
 |---|---|---|
-| `turn_start` | `{turn, role}` | `beginTurn()` |
-| `delta` | `{turn, role, text}` | `appendDelta()` |
+| `turn_start` | `{turn, role}` | `beginTurn()` — 以 `(turn, role)` 去重 |
+| `delta` | `{turn, role, text}` | `appendDelta()` — 以 `(turn, role)` 定位 |
 | `turn_end` | `{turn, role, text}` | `endTurn()`（用完整 text 覆盖） |
 | `error` | `{turn, role, message}` | `errorConversation()` |
-| `done` | `{reason, total_turns}` | `finishConversation()`，reason ∈ `ended / max_turns / user_aborted / llm_error` |
+| `done` | `{reason, total_turns}` | `finishConversation()`，reason ∈ `ended / max_turns / user_aborted / llm_error`；`total_turns` = agent 轮数 |
 
 ---
 
@@ -241,8 +243,9 @@ evaluation system/
 1. **`runningBranchId` 全局唯一**：开始一条新对话前必须确认它为 `null`。
 2. **`parseResult` 重置语义**：重新解析必须清掉旧的 `conversations` 和 `reports`。
 3. **`turn` 不可逆**：`turn_end` 收到的 text 永远覆盖 delta 累计值（后端是真源）。
-4. **报告与对话绑定**：同 `branchId` 重新运行对话 → 立刻删除该 branch 的 report。
-5. **store 不放派生数据**（如 overall%、颜色 class），派生在组件内 `useMemo` 计算。
+4. **`(turn, role)` 复合键**：同轮 user/agent 共享 `turn` 值，store 去重与 delta 定位必须用 `(turn, role)`，不能单用 `turn`。
+5. **报告与对话绑定**：同 `branchId` 重新运行对话 → 立刻删除该 branch 的 report。
+6. **store 不放派生数据**（如 overall%、颜色 class），派生在组件内 `useMemo` 计算。
 
 ### 组件订阅习惯
 
@@ -400,7 +403,7 @@ Rules:        max_chars_per_turn | no_repetition | forbidden_words | required_op
 - ❌ **禁止**在解析 LLM 返回后跳过 `ParseResponse(**data)` 校验。
 - ❌ **禁止**让 LLM 评分返回非 [0,1] 区间的分数（必须 clamp）。
 - ❌ **禁止**修改 `weight = 0.35/0.25/0.15/0.15/0.10` 的默认权重契约（parser prompt 已写死）。
-- ❌ **禁止**修改硬上限公式 `hard_max = ceil(estimated × 1.5)`（前后端共识）。
+- ❌ **禁止**修改硬上限公式 `hard_max = ceil(estimated × 1.5)`（前后端共识；比较对象为 **agent 轮数**，达限后允许当前轮 user 说完）。
 
 ### 9.4 UX
 

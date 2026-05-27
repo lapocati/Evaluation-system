@@ -1,11 +1,11 @@
 """POST /api/simulate/stream —— 双 NPC 交替的多轮对话 SSE 引擎。
 
 事件协议（与前端约定）：
-- event: turn_start  data: {turn, role}
-- event: delta       data: {turn, role, text}        # 流式 token，多次
-- event: turn_end    data: {turn, role, text}        # 完整文本
-- event: error       data: {turn, role, message}     # LLM 异常
-- event: done        data: {reason, total_turns}     # ended / max_turns / user_aborted / llm_error
+- event: turn_start  data: {turn, role}   # turn = 轮数（agent 发言时 +1；user 继承所属轮数）
+- event: delta       data: {turn, role, text}
+- event: turn_end    data: {turn, role, text}
+- event: error       data: {turn, role, message}
+- event: done        data: {reason, total_turns}     # total_turns = agent 发言次数
 """
 from __future__ import annotations
 
@@ -55,6 +55,10 @@ def _sse(event: str, payload: dict) -> dict:
     return {"event": event, "data": json.dumps(payload, ensure_ascii=False)}
 
 
+def _agent_turn_count(transcript: list[tuple[str, str]]) -> int:
+    return sum(1 for role, _ in transcript if role == "agent")
+
+
 @router.post("/simulate/stream")
 async def simulate_stream(req: SimulateRequest, request: Request):
     branch = req.branch
@@ -62,93 +66,130 @@ async def simulate_stream(req: SimulateRequest, request: Request):
 
     agent_sys = build_agent_system(req.instruction)
     npc_sys = build_npc_system(branch.npc_persona, req.instruction)
-    transcript: list[tuple[str, str]] = []  # [(role, text)]
+    transcript: list[tuple[str, str]] = []
     repeat_streak = 0
 
     async def event_gen():
         nonlocal repeat_streak
         reason = "ended"
-        turn = 0
+        agent_round = 0
+        halt = False
+
+        async def stream_message(role: str, round_num: int):
+            nonlocal repeat_streak, reason, halt
+
+            if role == "agent":
+                messages: list[dict] = [{"role": "system", "content": agent_sys}]
+                if round_num == 1:
+                    messages.append(
+                        {"role": "user", "content": "（电话已接通，请按指令开始开场白）"}
+                    )
+                for r, t in transcript:
+                    messages.append(
+                        {"role": "assistant" if r == "agent" else "user", "content": t}
+                    )
+                api_key = req.agent_key
+            else:
+                messages = [{"role": "system", "content": npc_sys}]
+                if repeat_streak >= 3:
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": "请推进对话，换一个角度回应，不要再重复之前的话。",
+                        }
+                    )
+                for r, t in transcript:
+                    messages.append(
+                        {"role": "assistant" if r == "user" else "user", "content": t}
+                    )
+                api_key = req.evaluator_key
+
+            yield _sse("turn_start", {"turn": round_num, "role": role})
+
+            accumulated: list[str] = []
+            try:
+                async for delta in chat_stream(messages, api_key, temperature=0.7):
+                    if await request.is_disconnected():
+                        reason = "user_aborted"
+                        halt = True
+                        return
+                    accumulated.append(delta)
+                    yield _sse("delta", {"turn": round_num, "role": role, "text": delta})
+            except DeepSeekError as e:
+                yield _sse("error", {"turn": round_num, "role": role, "message": str(e)})
+                reason = "llm_error"
+                halt = True
+                return
+
+            text = "".join(accumulated).strip()
+            transcript.append((role, text))
+            yield _sse("turn_end", {"turn": round_num, "role": role, "text": text})
+
+            if role == "user":
+                prev_user = next(
+                    (t for r, t in reversed(transcript[:-1]) if r == "user"),
+                    None,
+                )
+                if prev_user and _similarity(prev_user, text) >= 0.8:
+                    repeat_streak += 1
+                else:
+                    repeat_streak = 0
+
+        async def check_termination() -> bool:
+            nonlocal reason, halt
+            if not transcript:
+                return False
+            text = transcript[-1][1]
+            if not keyword_pre_screen(text):
+                return False
+            tail = "\n".join(
+                f"{'数字人' if r == 'agent' else '用户'}: {t}"
+                for r, t in transcript[-3:]
+            )
+            if await llm_confirm_end(tail, req.evaluator_key):
+                reason = "ended"
+                halt = True
+                return True
+            return False
+
         try:
-            while turn < hard_max:
+            while not halt:
                 if await request.is_disconnected():
                     reason = "user_aborted"
                     break
-                turn += 1
-                role = "agent" if turn == 1 else ("user" if transcript[-1][0] == "agent" else "agent")
 
-                if role == "agent":
-                    messages: list[dict] = [{"role": "system", "content": agent_sys}]
-                    if turn == 1:
-                        messages.append(
-                            {"role": "user", "content": "（电话已接通，请按指令开始开场白）"}
-                        )
-                    for r, t in transcript:
-                        messages.append(
-                            {"role": "assistant" if r == "agent" else "user", "content": t}
-                        )
-                    api_key = req.agent_key
-                else:
-                    messages = [{"role": "system", "content": npc_sys}]
-                    if repeat_streak >= 3:
-                        messages.append(
-                            {
-                                "role": "system",
-                                "content": "请推进对话，换一个角度回应，不要再重复之前的话。",
-                            }
-                        )
-                    for r, t in transcript:
-                        messages.append(
-                            {"role": "assistant" if r == "user" else "user", "content": t}
-                        )
-                    api_key = req.evaluator_key
-
-                yield _sse("turn_start", {"turn": turn, "role": role})
-
-                accumulated: list[str] = []
-                aborted = False
-                try:
-                    async for delta in chat_stream(messages, api_key, temperature=0.7):
-                        if await request.is_disconnected():
-                            aborted = True
-                            break
-                        accumulated.append(delta)
-                        yield _sse("delta", {"turn": turn, "role": role, "text": delta})
-                except DeepSeekError as e:
-                    yield _sse("error", {"turn": turn, "role": role, "message": str(e)})
-                    reason = "llm_error"
+                agent_round += 1
+                if agent_round > hard_max:
+                    reason = "max_turns"
                     break
 
-                if aborted:
-                    reason = "user_aborted"
+                async for evt in stream_message("agent", agent_round):
+                    yield evt
+                if halt:
                     break
 
-                text = "".join(accumulated).strip()
-                transcript.append((role, text))
-                yield _sse("turn_end", {"turn": turn, "role": role, "text": text})
+                if await check_termination():
+                    break
 
-                if role == "user":
-                    prev_user = next(
-                        (t for r, t in reversed(transcript[:-1]) if r == "user"),
-                        None,
-                    )
-                    if prev_user and _similarity(prev_user, text) >= 0.8:
-                        repeat_streak += 1
-                    else:
-                        repeat_streak = 0
+                if agent_round >= hard_max:
+                    async for evt in stream_message("user", agent_round):
+                        yield evt
+                    if not halt:
+                        reason = "max_turns"
+                    break
 
-                if keyword_pre_screen(text):
-                    tail = "\n".join(
-                        f"{'数字人' if r == 'agent' else '用户'}: {t}"
-                        for r, t in transcript[-3:]
-                    )
-                    if await llm_confirm_end(tail, req.evaluator_key):
-                        reason = "ended"
-                        break
-            else:
-                reason = "max_turns"
+                async for evt in stream_message("user", agent_round):
+                    yield evt
+                if halt:
+                    break
 
-            yield _sse("done", {"reason": reason, "total_turns": len(transcript)})
+                if await check_termination():
+                    break
+
+            yield _sse(
+                "done",
+                {"reason": reason, "total_turns": _agent_turn_count(transcript)},
+            )
         except asyncio.CancelledError:
             raise
 

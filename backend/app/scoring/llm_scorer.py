@@ -15,7 +15,7 @@ def _format_transcript(turns: list[ConversationTurn]) -> str:
     if not turns:
         return "（无对话）"
     return "\n".join(
-        f"第{t.turn}轮 {'数字人' if t.role == 'agent' else '用户'}：{t.text}"
+        f"第{t.turn}轮 数字人：{t.text}" if t.role == "agent" else f"用户：{t.text}"
         for t in turns
     )
 

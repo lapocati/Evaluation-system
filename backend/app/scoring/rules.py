@@ -5,7 +5,17 @@
 """
 from __future__ import annotations
 
+import re
+
 from app.schemas import ConversationTurn, ScoringItem
+
+_CONTENT_CHAR_PATTERN = re.compile(
+    r"[\u4e00-\u9fffA-Za-z0-9\uFF10-\uFF19\uFF21-\uFF3A\uFF41-\uFF5A]"
+)
+
+
+def _count_content_chars(text: str) -> int:
+    return len(_CONTENT_CHAR_PATTERN.findall(text))
 
 
 def _agent_turns(turns: list[ConversationTurn]) -> list[ConversationTurn]:
@@ -39,13 +49,13 @@ def evaluate_rule(item: ScoringItem, turns: list[ConversationTurn]) -> tuple[flo
             return 1.0, "规则参数缺失，跳过检查"
         if limit <= 0 or not agents:
             return 1.0, "无适用轮次"
-        violations = [t for t in agents if len(t.text) > limit]
+        violations = [t for t in agents if _count_content_chars(t.text) > limit]
         score = 1.0 - len(violations) / len(agents)
         if not violations:
             return 1.0, f"全部 {len(agents)} 轮均 ≤ {limit} 字"
         return max(0.0, score), (
             f"{len(violations)}/{len(agents)} 轮超过 {limit} 字（最长 "
-            f"{max(len(t.text) for t in violations)} 字）"
+            f"{max(_count_content_chars(t.text) for t in violations)} 字）"
         )
 
     if rule == "no_repetition":

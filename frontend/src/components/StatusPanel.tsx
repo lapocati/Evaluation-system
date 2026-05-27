@@ -13,9 +13,16 @@ const STATUS_META: Record<Conversation['status'], { text: string; cls: string }>
   llm_error: { text: 'LLM 调用出错', cls: 'bg-red-100 text-red-700' },
 };
 
+function agentTurnCount(conversation: Conversation): number {
+  if (conversation.totalTurns !== undefined) {
+    return conversation.totalTurns;
+  }
+  return conversation.turns.filter((t) => t.role === 'agent').length;
+}
+
 export default function StatusPanel({ conversation, estimatedMaxTurns }: Props) {
   const meta = STATUS_META[conversation.status];
-  const turnCount = conversation.turns.length;
+  const turnCount = agentTurnCount(conversation);
   const hardMax = Math.max(2, Math.ceil(estimatedMaxTurns * 1.5));
   const overEstimate = turnCount > estimatedMaxTurns;
   const turnColor = overEstimate ? 'text-orange-600' : 'text-slate-800';

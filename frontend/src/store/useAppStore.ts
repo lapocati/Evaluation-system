@@ -40,6 +40,10 @@ interface AppState {
   errorReport: (branchId: string, message: string) => void;
 }
 
+function sameTurn(a: { turn: number; role: TurnRole }, turn: number, role: TurnRole) {
+  return a.turn === turn && a.role === role;
+}
+
 export const useAppStore = create<AppState>((set) => ({
   instruction: '',
   agentKey: '',
@@ -75,7 +79,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const conv = s.conversations[branchId];
       if (!conv) return s;
-      if (conv.turns.some((t) => t.turn === turn)) return s;
+      if (conv.turns.some((t) => sameTurn(t, turn, role))) return s;
       return {
         conversations: {
           ...s.conversations,
@@ -87,22 +91,22 @@ export const useAppStore = create<AppState>((set) => ({
       };
     }),
 
-  appendDelta: (branchId, turn, _role, text) =>
+  appendDelta: (branchId, turn, role, text) =>
     set((s) => {
       const conv = s.conversations[branchId];
       if (!conv) return s;
       const turns = conv.turns.map((t) =>
-        t.turn === turn ? { ...t, text: t.text + text } : t,
+        sameTurn(t, turn, role) ? { ...t, text: t.text + text } : t,
       );
       return { conversations: { ...s.conversations, [branchId]: { ...conv, turns } } };
     }),
 
-  endTurn: (branchId, turn, _role, text) =>
+  endTurn: (branchId, turn, role, text) =>
     set((s) => {
       const conv = s.conversations[branchId];
       if (!conv) return s;
       const turns = conv.turns.map((t) =>
-        t.turn === turn ? { ...t, text, done: true } : t,
+        sameTurn(t, turn, role) ? { ...t, text, done: true } : t,
       );
       return { conversations: { ...s.conversations, [branchId]: { ...conv, turns } } };
     }),

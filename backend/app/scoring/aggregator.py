@@ -24,6 +24,7 @@ from app.schemas import (
     ScoringCriteria,
     ScoringItem,
 )
+from app.scoring.criteria_normalize import is_conditional_item
 from app.scoring.keyword import evaluate_keyword
 from app.scoring.llm_scorer import evaluate_llm_item
 from app.scoring.rules import evaluate_rule
@@ -104,8 +105,18 @@ async def _score_one_item(
             reason=f"不适用于分支 {branch.id}",
         )
 
+    eval_type = item.eval_type
     if item.eval_type == "rule":
         score, reason = evaluate_rule(item, conv.turns)
+    elif item.eval_type == "keyword" and is_conditional_item(item):
+        eval_type = "llm"
+        async with semaphore:
+            score, reason = await evaluate_llm_item(
+                item=item,
+                turns=conv.turns,
+                branch_name=branch.name,
+                api_key=evaluator_key,
+            )
     elif item.eval_type == "keyword":
         score, reason = evaluate_keyword(item, conv.turns)
     else:
@@ -121,7 +132,7 @@ async def _score_one_item(
         id=item.id,
         description=item.description,
         source=item.source,
-        eval_type=item.eval_type,
+        eval_type=eval_type,
         applicable=True,
         score=score,
         reason=reason,
