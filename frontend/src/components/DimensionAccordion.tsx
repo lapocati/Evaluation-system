@@ -118,8 +118,10 @@ export default function DimensionAccordion({ dimensions, efficiency }: Props) {
       >
         <div className="text-sm text-slate-700 space-y-1">
           <div>
-            实际轮次：<b>{efficiency.actual_turns}</b> / 预估上限{' '}
-            <b>{efficiency.estimated_max_turns}</b>
+            无效 <b>{efficiency.invalid_turns}</b> / <b>{efficiency.actual_turns}</b> 轮：重复{' '}
+            <b>{efficiency.invalid_breakdown.repeat ?? 0}</b>、空话{' '}
+            <b>{efficiency.invalid_breakdown.filler ?? 0}</b>、兜圈{' '}
+            <b>{efficiency.invalid_breakdown.circular ?? 0}</b>
           </div>
           <div className="text-xs text-slate-600">{efficiency.reason}</div>
         </div>

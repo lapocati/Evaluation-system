@@ -8,6 +8,13 @@ from __future__ import annotations
 import re
 
 from app.schemas import ConversationTurn, ScoringItem
+from app.scoring.config import (
+    FILLER_MAX_LEN,
+    FILLER_PATTERNS,
+    RULE_REPEAT_THRESHOLD,
+)
+
+_FILLER_REGEXES = [re.compile(p) for p in FILLER_PATTERNS]
 
 _CONTENT_CHAR_PATTERN = re.compile(
     r"[\u4e00-\u9fffA-Za-z0-9\uFF10-\uFF19\uFF21-\uFF3A\uFF41-\uFF5A]"
@@ -70,6 +77,36 @@ def _levenshtein_sim(a: str, b: str) -> float:
     return 1 - prev[lb] / max(la, lb)
 
 
+def is_filler_turn(text: str) -> bool:
+    text = text.strip()
+    if len(text) > FILLER_MAX_LEN:
+        return False
+    return any(r.match(text) for r in _FILLER_REGEXES)
+
+
+def is_adjacent_repeat(
+    agents: list[ConversationTurn],
+    turns: list[ConversationTurn],
+    index: int,
+    threshold: float,
+) -> bool:
+    if index <= 0 or index >= len(agents):
+        return False
+    if _levenshtein_sim(agents[index - 1].text, agents[index].text) < threshold:
+        return False
+    user_between = _user_text_before_agent(turns, index)
+    if user_between and _is_clarification_request(user_between):
+        return False
+    return True
+
+
+def is_circular_turn(turn: str, prior_turns: list[str], threshold: float) -> bool:
+    for prev in prior_turns:
+        if _levenshtein_sim(turn, prev) >= threshold:
+            return True
+    return False
+
+
 def evaluate_rule(item: ScoringItem, turns: list[ConversationTurn]) -> tuple[float, str]:
     rule = (item.rule or "").strip()
     agents = _agent_turns(turns)
@@ -95,15 +132,12 @@ def evaluate_rule(item: ScoringItem, turns: list[ConversationTurn]) -> tuple[flo
             return 1.0, "轮次不足，无需检查"
         repeats = 0
         for i in range(1, len(agents)):
-            if _levenshtein_sim(agents[i - 1].text, agents[i].text) >= 0.8:
-                user_between = _user_text_before_agent(turns, i)
-                if user_between and _is_clarification_request(user_between):
-                    continue
+            if is_adjacent_repeat(agents, turns, i, RULE_REPEAT_THRESHOLD):
                 repeats += 1
         score = 1.0 - repeats / (len(agents) - 1)
         if repeats == 0:
             return 1.0, "相邻轮次未发现高度重复"
-        return max(0.0, score), f"{repeats} 处相邻轮次相似度 ≥ 0.8"
+        return max(0.0, score), f"{repeats} 处相邻轮次相似度 ≥ {RULE_REPEAT_THRESHOLD}"
 
     if rule == "forbidden_words":
         words: list[str] = []

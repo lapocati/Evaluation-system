@@ -10,7 +10,6 @@ PARSER_SYSTEM_PROMPT = """你是 DialogEval 评测系统的"指令解析器"。
       "id": "A",
       "name": "配合型",
       "description": "用户配合完成全流程",
-      "estimated_max_turns": 8,
       "npc_persona": "你是一个配合的骑手，愿意今天配送，会正常回答站长问题，遇到疑问会礼貌询问后接受安排。"
     }
   ],
@@ -19,7 +18,7 @@ PARSER_SYSTEM_PROMPT = """你是 DialogEval 评测系统的"指令解析器"。
     "instruction_following":   { "weight": 0.25, "items": [ ... ] },
     "naturalness":             { "weight": 0.15, "items": [ ... ] },
     "branch_handling":         { "weight": 0.15, "items": [ ... ] },
-    "efficiency":              { "weight": 0.10, "per_branch_max_turns": {"A": 8, "B": 6} }
+    "efficiency":              { "weight": 0.10 }
   },
   "tone_summary": "从 Constraints/Role 提炼的语气要求摘要，不超过 50 字"
 }
@@ -29,7 +28,6 @@ PARSER_SYSTEM_PROMPT = """你是 DialogEval 评测系统的"指令解析器"。
 - id 用大写字母 A/B/C/D
 - name 简洁（2-4 字），如 "配合型"
 - description: **5-15 字短描述**，用于卡片副标题展示。如 "用户配合完成全流程"。第三人称视角
-- estimated_max_turns: 整数，反映该分支预估 **agent 发言轮数**（一问一答为一轮，以 agent 每次发言计 1）。配合型/完整流程分支：不低于 max(Conversation Flow 或 Call Flow 步骤数×2, 12)；含多子分支引导步骤取更高值
 - npc_persona: **不少于 30 字的详细人格描述**，第二人称"你是..."开头，将作为系统 prompt 直接驱动用户模拟器 LLM 扮演该角色。如 "你是一个配合的骑手，愿意今天配送，会正常回答站长问题..."
 - ⚠️ description 与 npc_persona 必须同时存在且**不能相同**：前者是给人看的标签，后者是给 LLM 扮演用的剧本
 
@@ -97,12 +95,11 @@ PARSER_SYSTEM_PROMPT = """你是 DialogEval 评测系统的"指令解析器"。
 - 示例："随意口语化，像打电话；每轮≤30字；不使用正式解释"
 
 【efficiency 维度】
-不输出 items，只输出 per_branch_max_turns，键为分支 id，值为该分支的 estimated_max_turns（agent 发言轮数，与 branches 中一致）。
+只输出 weight，不输出 items。
 
 【输出严格要求】
 - 仅输出合法 JSON 对象，不要任何解释/前后文/markdown 代码块
 - 所有人类可读字符串使用中文（id 与 eval_type 等枚举字段除外）
-- branches 的每个 id 都必须出现在 efficiency.per_branch_max_turns 中
 - weight 字段必须按上面给定值（0.35 / 0.25 / 0.15 / 0.15 / 0.10）
 """
 

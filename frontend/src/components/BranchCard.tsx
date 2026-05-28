@@ -37,9 +37,6 @@ export default function BranchCard({
           {branch.id}
         </span>
         <span className="font-semibold text-slate-800">{branch.name}</span>
-        <span className="ml-auto text-xs text-slate-500">
-          ≤ {branch.estimated_max_turns} 轮
-        </span>
         {label && (
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${label.cls}`}>
             {label.text}

@@ -2,7 +2,6 @@ import type { Conversation } from '../types';
 
 interface Props {
   conversation: Conversation;
-  estimatedMaxTurns: number;
 }
 
 const STATUS_META: Record<Conversation['status'], { text: string; cls: string }> = {
@@ -20,12 +19,9 @@ function agentTurnCount(conversation: Conversation): number {
   return conversation.turns.filter((t) => t.role === 'agent').length;
 }
 
-export default function StatusPanel({ conversation, estimatedMaxTurns }: Props) {
+export default function StatusPanel({ conversation }: Props) {
   const meta = STATUS_META[conversation.status];
   const turnCount = agentTurnCount(conversation);
-  const hardMax = Math.max(2, Math.ceil(estimatedMaxTurns * 1.5));
-  const overEstimate = turnCount > estimatedMaxTurns;
-  const turnColor = overEstimate ? 'text-orange-600' : 'text-slate-800';
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 flex items-center gap-4 flex-wrap text-sm">
@@ -34,8 +30,7 @@ export default function StatusPanel({ conversation, estimatedMaxTurns }: Props) 
       </span>
       <span className="text-slate-500">
         轮次：
-        <span className={`font-semibold ml-1 ${turnColor}`}>{turnCount}</span>
-        <span className="text-slate-400"> / 预估 {estimatedMaxTurns}（硬限 {hardMax}）</span>
+        <span className="font-semibold ml-1 text-slate-800">{turnCount}</span>
       </span>
       {conversation.error && (
         <span className="text-red-600 text-xs break-all">{conversation.error}</span>

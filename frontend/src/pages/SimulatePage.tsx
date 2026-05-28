@@ -105,10 +105,7 @@ export default function SimulatePage() {
       </header>
 
       <div className="flex-shrink-0 mb-3">
-        <StatusPanel
-          conversation={conversation}
-          estimatedMaxTurns={branch.estimated_max_turns}
-        />
+        <StatusPanel conversation={conversation} />
       </div>
 
       <div

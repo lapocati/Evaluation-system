@@ -7,7 +7,6 @@ class Branch(BaseModel):
     id: str
     name: str
     description: str
-    estimated_max_turns: int
     npc_persona: str
 
 
@@ -39,7 +38,6 @@ class DimensionCriteria(BaseModel):
 
 class EfficiencyCriteria(BaseModel):
     weight: float
-    per_branch_max_turns: dict[str, int]
 
 
 class ScoringCriteria(BaseModel):
@@ -104,7 +102,8 @@ class EfficiencyResult(BaseModel):
     weight: float
     score: float
     actual_turns: int
-    estimated_max_turns: int
+    invalid_turns: int
+    invalid_breakdown: dict[str, int]
     reason: str
 
 

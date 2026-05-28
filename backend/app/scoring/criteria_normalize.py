@@ -16,8 +16,6 @@ BUNDLING_PATTERN = re.compile(r"遵循.*(对话流程|FAQ|常见问题|流程和
 FAQ_SOURCE_PATTERN = re.compile(r"FAQ|Knowledge Points|知识库|知识点", re.I)
 
 _NO_MOVE_KINDS = frozenset({"mandatory_step", "faq_entry", "opening"})
-_TURN_RELEVANT_KINDS = frozenset({"mandatory_step", "opening", "conditional_response"})
-
 
 def is_conditional_item(item: ScoringItem) -> bool:
     text = f"{item.description} {item.source}"
@@ -161,54 +159,6 @@ def _fix_conditional_item(item: ScoringItem, branches: list[Branch]) -> ScoringI
     )
 
 
-def _item_applies_to_branch(item: ScoringItem, branch_id: str) -> bool:
-    if not item.applicable_branches:
-        return True
-    return branch_id in item.applicable_branches
-
-
-def _count_turn_relevant_items(criteria: ScoringCriteria, branch_id: str) -> int:
-    count = 0
-    for dim in ("task_completion", "instruction_following", "naturalness", "branch_handling"):
-        for item in getattr(criteria, dim).items:
-            if item.item_kind not in _TURN_RELEVANT_KINDS:
-                continue
-            if _item_applies_to_branch(item, branch_id):
-                count += 1
-    return count
-
-
-def _bump_branch_turn_estimates(response: ParseResponse) -> ParseResponse:
-    criteria = response.scoring_criteria
-    branches = response.branches
-    terminal_ids = set(_terminal_branch_ids(branches))
-    step_count = sum(
-        1
-        for item in criteria.task_completion.items
-        if item.item_kind == "mandatory_step"
-    )
-    min_turns = max(step_count * 2, 12) if step_count > 0 else 12
-    new_branches = []
-    for b in branches:
-        if b.id in terminal_ids:
-            estimated = max(_count_turn_relevant_items(criteria, b.id) * 2, 2)
-        else:
-            estimated = max(b.estimated_max_turns, min_turns)
-        new_branches.append(b.model_copy(update={"estimated_max_turns": estimated}))
-    per_branch = {b.id: b.estimated_max_turns for b in new_branches}
-    new_efficiency = response.scoring_criteria.efficiency.model_copy(
-        update={"per_branch_max_turns": per_branch}
-    )
-    return response.model_copy(
-        update={
-            "branches": new_branches,
-            "scoring_criteria": response.scoring_criteria.model_copy(
-                update={"efficiency": new_efficiency}
-            ),
-        }
-    )
-
-
 def normalize_scoring_criteria(response: ParseResponse) -> ParseResponse:
     criteria = response.scoring_criteria
     branches = response.branches
@@ -265,5 +215,5 @@ def normalize_scoring_criteria(response: ParseResponse) -> ParseResponse:
         efficiency=criteria.efficiency,
     )
     result = response.model_copy(update={"scoring_criteria": new_criteria})
-    return _bump_branch_turn_estimates(result)
+    return result
 

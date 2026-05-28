@@ -11,7 +11,6 @@ export interface Branch {
   id: string;
   name: string;
   description: string;
-  estimated_max_turns: number;
   npc_persona: string;
 }
 
@@ -34,7 +33,6 @@ export interface DimensionCriteria {
 
 export interface EfficiencyCriteria {
   weight: number;
-  per_branch_max_turns: Record<string, number>;
 }
 
 export interface ScoringCriteria {
@@ -103,7 +101,8 @@ export interface EfficiencyResult {
   weight: number;
   score: number;
   actual_turns: number;
-  estimated_max_turns: number;
+  invalid_turns: number;
+  invalid_breakdown: Record<string, number>;
   reason: string;
 }
 

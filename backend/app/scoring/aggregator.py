@@ -4,7 +4,7 @@
 - LLM 子项 asyncio.gather 并发（Semaphore 限 8）
 - applicable_branches 过滤（不含本分支 → 不计入分母）
 - 维度内若无任何 applicable item → score = None，weight 不计入 overall
-- 效率：任务完成度×50% + 轮数得分×50%；异常结束时轮数得分为 0
+- 效率：无效轮次占比扣分（空话/重复/兜圈）；task 未完成时效率为 0
 - summary 单独再调一次 LLM
 """
 from __future__ import annotations
@@ -26,10 +26,21 @@ from app.schemas import (
     ScoringCriteria,
     ScoringItem,
 )
+from app.scoring.config import (
+    CIRCULAR_THRESHOLD,
+    EFFICIENCY_REPEAT_THRESHOLD,
+    EFFICIENCY_TASK_FLOOR,
+)
 from app.scoring.criteria_normalize import is_conditional_item
 from app.scoring.keyword import evaluate_keyword
 from app.scoring.llm_scorer import evaluate_llm_item
-from app.scoring.rules import evaluate_rule
+from app.scoring.rules import (
+    _agent_turns,
+    evaluate_rule,
+    is_adjacent_repeat,
+    is_circular_turn,
+    is_filler_turn,
+)
 
 NON_EFFICIENCY_DIMS: tuple[str, ...] = (
     "task_completion",
@@ -100,38 +111,67 @@ def _efficiency(
     *,
     criteria_weight: float,
     conv: ConversationData,
-    branch: Branch,
     task_score: float | None,
 ) -> EfficiencyResult:
-    estimated = max(1, branch.estimated_max_turns)
     actual = max(0, conv.total_turns)
-    task_component = task_score if task_score is not None else 1.0
+    empty_breakdown = {"filler": 0, "repeat": 0, "circular": 0}
 
-    if conv.status == "max_turns":
-        turn_score = 0.0
-        turn_reason = "达到硬上限（estimated×1.5），轮数分 0"
-    elif conv.status in ("user_aborted", "llm_error"):
-        turn_score = 0.0
-        turn_reason = f"对话异常结束（{conv.status}），轮数分 0"
-    elif actual <= estimated:
-        turn_score = 1.0
-        turn_reason = f"{actual} 轮内完成（≤ 预估 {estimated}）"
-    else:
-        over = actual - estimated
-        cap = 0.5 * estimated
-        turn_score = max(0.0, 1.0 - over / cap)
-        turn_reason = f"超出预估 {over} 轮（预估 {estimated}），轮数线性折扣"
+    if task_score is not None and task_score < EFFICIENCY_TASK_FLOOR:
+        return EfficiencyResult(
+            weight=criteria_weight,
+            score=0.0,
+            actual_turns=actual,
+            invalid_turns=0,
+            invalid_breakdown=empty_breakdown,
+            reason=f"任务完成度 {task_score:.2f} < {EFFICIENCY_TASK_FLOOR}，效率不适用",
+        )
 
-    score = 0.5 * task_component + 0.5 * turn_score
+    agents = _agent_turns(conv.turns)
+    total = len(agents)
+
+    if total <= 1:
+        return EfficiencyResult(
+            weight=criteria_weight,
+            score=1.0,
+            actual_turns=actual,
+            invalid_turns=0,
+            invalid_breakdown=empty_breakdown,
+            reason="agent 轮次 ≤ 1，样本不足，默认满分",
+        )
+
+    breakdown = {"filler": 0, "repeat": 0, "circular": 0}
+    invalid = 0
+
+    for i, agent in enumerate(agents):
+        text = agent.text
+        if is_filler_turn(text):
+            invalid += 1
+            breakdown["filler"] += 1
+            continue
+        if i > 0 and is_adjacent_repeat(
+            agents, conv.turns, i, EFFICIENCY_REPEAT_THRESHOLD
+        ):
+            invalid += 1
+            breakdown["repeat"] += 1
+            continue
+        prior_texts = [agents[j].text for j in range(i - 1)]
+        if prior_texts and is_circular_turn(text, prior_texts, CIRCULAR_THRESHOLD):
+            invalid += 1
+            breakdown["circular"] += 1
+
+    penalty = min(invalid / total, 1.0)
+    score = round(1.0 - penalty, 4)
     reason = (
-        f"任务完成 {task_component:.2f}×50% + 轮数 {turn_score:.2f}×50% = {score:.2f}；"
-        f"{turn_reason}"
+        f"无效 {invalid}/{total} 轮（空话 {breakdown['filler']}、"
+        f"重复 {breakdown['repeat']}、兜圈 {breakdown['circular']}），"
+        f"占比 {penalty:.2%}，得分 {score:.2f}"
     )
     return EfficiencyResult(
         weight=criteria_weight,
         score=score,
         actual_turns=actual,
-        estimated_max_turns=estimated,
+        invalid_turns=invalid,
+        invalid_breakdown=breakdown,
         reason=reason,
     )
 
@@ -243,7 +283,8 @@ async def _summarize(
         "weight": eff.weight,
         "score": eff.score,
         "actual_turns": eff.actual_turns,
-        "estimated_max_turns": eff.estimated_max_turns,
+        "invalid_turns": eff.invalid_turns,
+        "invalid_breakdown": eff.invalid_breakdown,
         "reason": eff.reason,
     }
     messages = build_summary_messages(
@@ -323,7 +364,6 @@ async def build_report(
     efficiency = _efficiency(
         criteria_weight=scoring_criteria.efficiency.weight,
         conv=conversation,
-        branch=branch,
         task_score=task_score,
     )
 

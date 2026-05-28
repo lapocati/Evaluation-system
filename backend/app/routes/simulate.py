@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import time
 from pathlib import Path
 
@@ -23,6 +22,7 @@ from app.llm.deepseek import DeepSeekError, chat_stream
 from app.prompts.agent import build_agent_system
 from app.prompts.npc import build_npc_system
 from app.schemas import Branch, ScoringCriteria
+from app.scoring.config import SIMULATION_SAFETY_MAX
 from app.termination import keyword_pre_screen, llm_confirm_end
 
 router = APIRouter()
@@ -116,15 +116,12 @@ def _agent_turn_count(transcript: list[tuple[str, str]]) -> int:
 @router.post("/simulate/stream")
 async def simulate_stream(req: SimulateRequest, request: Request):
     branch = req.branch
-    hard_max = max(2, math.ceil(branch.estimated_max_turns * 1.5))
     _dbg_b3_sim(
         "H4",
         "simulate.py:simulate_stream",
         "session_start",
         {
             "branchId": branch.id,
-            "estimatedMaxTurns": branch.estimated_max_turns,
-            "hardMax": hard_max,
             "agentKeyLen": len(req.agent_key or ""),
             "evaluatorKeyLen": len(req.evaluator_key or ""),
             "instructionLen": len(req.instruction or ""),
@@ -282,8 +279,8 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                     break
 
                 agent_round += 1
-                if agent_round > hard_max:
-                    reason = "max_turns"
+                if agent_round > SIMULATION_SAFETY_MAX:
+                    reason = "ended"
                     break
 
                 async for evt in stream_message("agent", agent_round):
@@ -292,13 +289,6 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                     break
 
                 if await check_termination():
-                    break
-
-                if agent_round >= hard_max:
-                    async for evt in stream_message("user", agent_round):
-                        yield evt
-                    if not halt:
-                        reason = "max_turns"
                     break
 
                 async for evt in stream_message("user", agent_round):
