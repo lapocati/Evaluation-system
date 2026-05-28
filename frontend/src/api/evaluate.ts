@@ -7,6 +7,7 @@ interface RunEvaluateParams {
   scoring_criteria: ScoringCriteria;
   instruction: string;
   evaluator_key: string;
+  tone_summary?: string;
 }
 
 function toBackendStatus(s: Conversation['status']): string {
@@ -28,6 +29,7 @@ export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
     branch: params.branch,
     scoring_criteria: params.scoring_criteria,
     evaluator_key: params.evaluator_key,
+    tone_summary: params.tone_summary,
     conversation: {
       branch_id: branchId,
       turns: params.conversation.turns

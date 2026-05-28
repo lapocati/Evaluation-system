@@ -26,6 +26,8 @@ async def evaluate_llm_item(
     turns: list[ConversationTurn],
     branch_name: str,
     api_key: str,
+    item_kind: str | None = None,
+    tone_constraints: str = "",
 ) -> tuple[float, str]:
     transcript = _format_transcript(turns)
     messages = build_scorer_messages(
@@ -33,6 +35,8 @@ async def evaluate_llm_item(
         item_source=item.source,
         branch_name=branch_name,
         transcript=transcript,
+        item_kind=item_kind or item.item_kind,
+        tone_constraints=tone_constraints,
     )
     try:
         raw = await chat(

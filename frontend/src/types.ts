@@ -1,5 +1,12 @@
 export type EvalType = 'rule' | 'keyword' | 'llm';
 
+export type ItemKind =
+  | 'mandatory_step'
+  | 'conditional_response'
+  | 'faq_entry'
+  | 'constraint'
+  | 'opening';
+
 export interface Branch {
   id: string;
   name: string;
@@ -17,6 +24,7 @@ export interface ScoringItem {
   rule?: string;
   rule_param?: unknown;
   applicable_branches?: string[];
+  item_kind?: ItemKind;
 }
 
 export interface DimensionCriteria {
@@ -40,6 +48,7 @@ export interface ScoringCriteria {
 export interface ParseResult {
   branches: Branch[];
   scoring_criteria: ScoringCriteria;
+  tone_summary?: string;
 }
 
 export type TurnRole = 'agent' | 'user';

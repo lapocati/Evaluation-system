@@ -95,7 +95,32 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => {
       const conv = s.conversations[branchId];
       if (!conv) return s;
-      const turns = conv.turns.map((t) =>
+      let turns = conv.turns;
+      const hasMatch = turns.some((t) => sameTurn(t, turn, role));
+      if (!hasMatch) {
+        // #region agent log
+        fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
+          body: JSON.stringify({
+            sessionId: '1793b4',
+            hypothesisId: 'H2',
+            location: 'useAppStore.ts:appendDelta',
+            message: 'auto_begin_turn',
+            data: {
+              branchId,
+              turn,
+              role,
+              textLen: text.length,
+              existingTurns: turns.map((t) => ({ turn: t.turn, role: t.role })),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        turns = [...turns, { turn, role, text: '', done: false }];
+      }
+      turns = turns.map((t) =>
         sameTurn(t, turn, role) ? { ...t, text: t.text + text } : t,
       );
       return { conversations: { ...s.conversations, [branchId]: { ...conv, turns } } };

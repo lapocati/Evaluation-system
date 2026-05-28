@@ -11,6 +11,15 @@ class Branch(BaseModel):
     npc_persona: str
 
 
+ItemKind = Literal[
+    "mandatory_step",
+    "conditional_response",
+    "faq_entry",
+    "constraint",
+    "opening",
+]
+
+
 class ScoringItem(BaseModel):
     id: str
     description: str
@@ -20,6 +29,7 @@ class ScoringItem(BaseModel):
     rule: Optional[str] = None
     rule_param: Optional[Any] = None
     applicable_branches: Optional[list[str]] = None
+    item_kind: Optional[ItemKind] = None
 
 
 class DimensionCriteria(BaseModel):
@@ -48,6 +58,7 @@ class ParseRequest(BaseModel):
 class ParseResponse(BaseModel):
     branches: list[Branch]
     scoring_criteria: ScoringCriteria
+    tone_summary: Optional[str] = None
 
 
 class ConversationTurn(BaseModel):
@@ -69,6 +80,7 @@ class EvaluateRequest(BaseModel):
     conversation: ConversationData
     scoring_criteria: ScoringCriteria
     evaluator_key: str
+    tone_summary: Optional[str] = None
 
 
 class ScoreItemResult(BaseModel):

@@ -4,19 +4,21 @@
 - LLM 子项 asyncio.gather 并发（Semaphore 限 8）
 - applicable_branches 过滤（不含本分支 → 不计入分母）
 - 维度内若无任何 applicable item → score = None，weight 不计入 overall
-- 效率：max_turns × 1.5 时置 0；正常完成 ≤ estimated → 1.0；超出按线性下降
+- 效率：任务完成度×50% + 轮数得分×50%；异常结束时轮数得分为 0
 - summary 单独再调一次 LLM
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import re
 
 from app.llm.deepseek import DeepSeekError, chat
 from app.prompts.summary import build_summary_messages
 from app.schemas import (
     Branch,
     ConversationData,
+    ConversationTurn,
     DimensionScoreResult,
     EfficiencyResult,
     Report,
@@ -38,6 +40,9 @@ NON_EFFICIENCY_DIMS: tuple[str, ...] = (
 
 LLM_CONCURRENCY = 8
 
+FAQ_SOURCE_PATTERN = re.compile(r"FAQ|Knowledge Points|知识库|知识点", re.I)
+NA_REASON_MARKERS = ("不适用", "未询问", "未触发", "未被触发", "用户未问")
+
 
 def _is_applicable(item: ScoringItem, branch_id: str) -> bool:
     if not item.applicable_branches:
@@ -45,44 +50,89 @@ def _is_applicable(item: ScoringItem, branch_id: str) -> bool:
     return branch_id in item.applicable_branches
 
 
+def _is_faq_item(item: ScoringItem) -> bool:
+    return item.item_kind == "faq_entry" or bool(FAQ_SOURCE_PATTERN.search(item.source))
+
+
+def _user_text(turns: list[ConversationTurn]) -> str:
+    return "\n".join(t.text for t in turns if t.role == "user")
+
+
+def _is_faq_triggered(item: ScoringItem, turns: list[ConversationTurn]) -> bool:
+    user_text = _user_text(turns)
+    if not user_text.strip():
+        return False
+    keywords = item.keywords or []
+    if keywords:
+        return any(k in user_text for k in keywords if len(k.strip()) >= 2)
+    desc = re.sub(r"[^\u4e00-\u9fff]", " ", item.description)
+    tokens = [t for t in desc.split() if len(t) >= 2]
+    return any(t in user_text for t in tokens[:6])
+
+
+def _reason_indicates_na(reason: str) -> bool:
+    return any(m in reason for m in NA_REASON_MARKERS)
+
+
+def _na_reason_for_item(item: ScoringItem, reason: str) -> str:
+    if _reason_indicates_na(reason):
+        return reason
+    if _is_faq_item(item):
+        return "用户未询问，不适用"
+    return "场景未触发，不适用"
+
+
+def _should_mark_na(item: ScoringItem, reason: str, turns: list[ConversationTurn]) -> bool:
+    if item.item_kind == "mandatory_step":
+        return False
+    if item.item_kind == "opening" or item.rule == "required_opening":
+        return False
+    if _is_faq_item(item) or item.item_kind == "faq_entry":
+        return not _is_faq_triggered(item, turns)
+    if item.item_kind == "conditional_response":
+        return _reason_indicates_na(reason)
+    if item.eval_type == "llm" and is_conditional_item(item):
+        return _reason_indicates_na(reason)
+    return False
+
+
 def _efficiency(
-    *, criteria_weight: float, conv: ConversationData, branch: Branch
+    *,
+    criteria_weight: float,
+    conv: ConversationData,
+    branch: Branch,
+    task_score: float | None,
 ) -> EfficiencyResult:
     estimated = max(1, branch.estimated_max_turns)
     actual = max(0, conv.total_turns)
+    task_component = task_score if task_score is not None else 1.0
+
     if conv.status == "max_turns":
-        return EfficiencyResult(
-            weight=criteria_weight,
-            score=0.0,
-            actual_turns=actual,
-            estimated_max_turns=estimated,
-            reason=f"达到硬上限（estimated×1.5），效率分置 0",
-        )
-    if conv.status in ("user_aborted", "llm_error"):
-        return EfficiencyResult(
-            weight=criteria_weight,
-            score=0.0,
-            actual_turns=actual,
-            estimated_max_turns=estimated,
-            reason=f"对话异常结束（{conv.status}），效率不计分",
-        )
-    if actual <= estimated:
-        return EfficiencyResult(
-            weight=criteria_weight,
-            score=1.0,
-            actual_turns=actual,
-            estimated_max_turns=estimated,
-            reason=f"{actual} 轮内完成（≤ 预估 {estimated}）",
-        )
-    over = actual - estimated
-    cap = 0.5 * estimated
-    score = max(0.0, 1.0 - over / cap)
+        turn_score = 0.0
+        turn_reason = "达到硬上限（estimated×1.5），轮数分 0"
+    elif conv.status in ("user_aborted", "llm_error"):
+        turn_score = 0.0
+        turn_reason = f"对话异常结束（{conv.status}），轮数分 0"
+    elif actual <= estimated:
+        turn_score = 1.0
+        turn_reason = f"{actual} 轮内完成（≤ 预估 {estimated}）"
+    else:
+        over = actual - estimated
+        cap = 0.5 * estimated
+        turn_score = max(0.0, 1.0 - over / cap)
+        turn_reason = f"超出预估 {over} 轮（预估 {estimated}），轮数线性折扣"
+
+    score = 0.5 * task_component + 0.5 * turn_score
+    reason = (
+        f"任务完成 {task_component:.2f}×50% + 轮数 {turn_score:.2f}×50% = {score:.2f}；"
+        f"{turn_reason}"
+    )
     return EfficiencyResult(
         weight=criteria_weight,
         score=score,
         actual_turns=actual,
         estimated_max_turns=estimated,
-        reason=f"超出预估 {over} 轮（预估 {estimated}），线性折扣",
+        reason=reason,
     )
 
 
@@ -93,6 +143,8 @@ async def _score_one_item(
     branch: Branch,
     evaluator_key: str,
     semaphore: asyncio.Semaphore,
+    dim_name: str,
+    tone_summary: str | None,
 ) -> ScoreItemResult:
     if not _is_applicable(item, branch.id):
         return ScoreItemResult(
@@ -105,28 +157,51 @@ async def _score_one_item(
             reason=f"不适用于分支 {branch.id}",
         )
 
+    tone_constraints = tone_summary or "" if dim_name == "naturalness" else ""
     eval_type = item.eval_type
+    llm_kwargs = {
+        "item": item,
+        "turns": conv.turns,
+        "branch_name": branch.name,
+        "api_key": evaluator_key,
+        "item_kind": item.item_kind,
+        "tone_constraints": tone_constraints,
+    }
+
     if item.eval_type == "rule":
         score, reason = evaluate_rule(item, conv.turns)
+    elif item.eval_type == "keyword" and _is_faq_item(item):
+        if not _is_faq_triggered(item, conv.turns):
+            return ScoreItemResult(
+                id=item.id,
+                description=item.description,
+                source=item.source,
+                eval_type=eval_type,
+                applicable=False,
+                score=None,
+                reason="用户未询问，不适用",
+            )
+        score, reason = evaluate_keyword(item, conv.turns)
     elif item.eval_type == "keyword" and is_conditional_item(item):
         eval_type = "llm"
         async with semaphore:
-            score, reason = await evaluate_llm_item(
-                item=item,
-                turns=conv.turns,
-                branch_name=branch.name,
-                api_key=evaluator_key,
-            )
+            score, reason = await evaluate_llm_item(**llm_kwargs)
     elif item.eval_type == "keyword":
         score, reason = evaluate_keyword(item, conv.turns)
     else:
         async with semaphore:
-            score, reason = await evaluate_llm_item(
-                item=item,
-                turns=conv.turns,
-                branch_name=branch.name,
-                api_key=evaluator_key,
-            )
+            score, reason = await evaluate_llm_item(**llm_kwargs)
+
+    if _should_mark_na(item, reason, conv.turns):
+        return ScoreItemResult(
+            id=item.id,
+            description=item.description,
+            source=item.source,
+            eval_type=eval_type,
+            applicable=False,
+            score=None,
+            reason=_na_reason_for_item(item, reason),
+        )
 
     return ScoreItemResult(
         id=item.id,
@@ -145,13 +220,19 @@ async def _summarize(
     dims: dict[str, DimensionScoreResult],
     eff: EfficiencyResult,
     api_key: str,
+    item_kinds: dict[str, str | None],
 ) -> tuple[list[str], list[str]]:
     payload_dims = {
         name: {
             "weight": d.weight,
             "score": d.score,
             "items": [
-                {"description": i.description, "score": i.score, "reason": i.reason}
+                {
+                    "description": i.description,
+                    "score": i.score,
+                    "reason": i.reason,
+                    "item_kind": item_kinds.get(i.id),
+                }
                 for i in d.items
                 if i.applicable
             ],
@@ -192,6 +273,7 @@ async def build_report(
     conversation: ConversationData,
     scoring_criteria: ScoringCriteria,
     evaluator_key: str,
+    tone_summary: str | None = None,
 ) -> Report:
     semaphore = asyncio.Semaphore(LLM_CONCURRENCY)
 
@@ -203,6 +285,8 @@ async def build_report(
     flat: list[tuple[str, ScoringItem]] = [
         (dim, item) for dim, items in dim_to_items.items() for item in items
     ]
+    item_kinds = {item.id: item.item_kind for _, item in flat}
+
     tasks = [
         _score_one_item(
             item=item,
@@ -210,8 +294,10 @@ async def build_report(
             branch=branch,
             evaluator_key=evaluator_key,
             semaphore=semaphore,
+            dim_name=dim,
+            tone_summary=tone_summary,
         )
-        for _, item in flat
+        for dim, item in flat
     ]
     results: list[ScoreItemResult] = await asyncio.gather(*tasks)
 
@@ -233,10 +319,12 @@ async def build_report(
             items=dim_items,
         )
 
+    task_score = dims["task_completion"].score
     efficiency = _efficiency(
         criteria_weight=scoring_criteria.efficiency.weight,
         conv=conversation,
         branch=branch,
+        task_score=task_score,
     )
 
     weighted_sum = 0.0
@@ -250,7 +338,11 @@ async def build_report(
     overall = weighted_sum / weight_sum if weight_sum > 0 else 0.0
 
     advantages, improvements = await _summarize(
-        branch=branch, dims=dims, eff=efficiency, api_key=evaluator_key
+        branch=branch,
+        dims=dims,
+        eff=efficiency,
+        api_key=evaluator_key,
+        item_kinds=item_kinds,
     )
 
     return Report(

@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -24,6 +26,58 @@ from app.schemas import Branch, ScoringCriteria
 from app.termination import keyword_pre_screen, llm_confirm_end
 
 router = APIRouter()
+
+_DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-1793b4.log"
+_DEBUG_LOG_B3 = Path(__file__).resolve().parents[3] / "debug-b3a46e.log"
+_DEBUG_LOG_7BE968 = Path(__file__).resolve().parents[3] / "debug-7be968.log"
+
+
+def _dbg7(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    # #region agent log
+    payload = {
+        "sessionId": "7be968",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    with _DEBUG_LOG_7BE968.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    # #endregion
+
+
+def _dbg_b3_sim(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    # #region agent log
+    payload = {
+        "sessionId": "b3a46e",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    with _DEBUG_LOG_B3.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    # #endregion
+
+
+    # #endregion
+
+
+def _dbg(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    # #region agent log
+    payload = {
+        "sessionId": "1793b4",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    with _DEBUG_LOG.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    # #endregion
 
 
 class SimulateRequest(BaseModel):
@@ -63,6 +117,19 @@ def _agent_turn_count(transcript: list[tuple[str, str]]) -> int:
 async def simulate_stream(req: SimulateRequest, request: Request):
     branch = req.branch
     hard_max = max(2, math.ceil(branch.estimated_max_turns * 1.5))
+    _dbg_b3_sim(
+        "H4",
+        "simulate.py:simulate_stream",
+        "session_start",
+        {
+            "branchId": branch.id,
+            "estimatedMaxTurns": branch.estimated_max_turns,
+            "hardMax": hard_max,
+            "agentKeyLen": len(req.agent_key or ""),
+            "evaluatorKeyLen": len(req.evaluator_key or ""),
+            "instructionLen": len(req.instruction or ""),
+        },
+    )
 
     agent_sys = build_agent_system(req.instruction)
     npc_sys = build_npc_system(branch.npc_persona, req.instruction)
@@ -105,8 +172,23 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                 api_key = req.evaluator_key
 
             yield _sse("turn_start", {"turn": round_num, "role": role})
+            msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
+            _dbg_b3_sim(
+                "H4",
+                "simulate.py:stream_message",
+                "before_llm",
+                {
+                    "turn": round_num,
+                    "role": role,
+                    "msgCount": len(messages),
+                    "msgChars": msg_chars,
+                    "transcriptTurns": len(transcript),
+                    "keyLen": len(api_key or ""),
+                },
+            )
 
             accumulated: list[str] = []
+            delta_count = 0
             try:
                 async for delta in chat_stream(messages, api_key, temperature=0.7):
                     if await request.is_disconnected():
@@ -114,14 +196,47 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                         halt = True
                         return
                     accumulated.append(delta)
+                    delta_count += 1
                     yield _sse("delta", {"turn": round_num, "role": role, "text": delta})
             except DeepSeekError as e:
+                _dbg_b3_sim(
+                    "H1",
+                    "simulate.py:stream_message",
+                    "deepseek_error",
+                    {
+                        "turn": round_num,
+                        "role": role,
+                        "error": str(e)[:400],
+                        "msgCount": len(messages),
+                        "msgChars": msg_chars,
+                    },
+                )
+                _dbg7(
+                    "H1" if "HTTP" in str(e) else "H2",
+                    "simulate.py:stream_message",
+                    "deepseek_error",
+                    {
+                        "turn": round_num,
+                        "role": role,
+                        "error": str(e)[:400],
+                        "msgCount": len(messages),
+                        "msgChars": msg_chars,
+                        "keyLen": len(api_key or ""),
+                        "keyEmpty": not bool(api_key and api_key.strip()),
+                    },
+                )
                 yield _sse("error", {"turn": round_num, "role": role, "message": str(e)})
                 reason = "llm_error"
                 halt = True
                 return
 
             text = "".join(accumulated).strip()
+            _dbg(
+                "H5",
+                "simulate.py:stream_message",
+                "turn_end",
+                {"turn": round_num, "role": role, "deltaCount": delta_count, "textLen": len(text)},
+            )
             transcript.append((role, text))
             yield _sse("turn_end", {"turn": round_num, "role": role, "text": text})
 
@@ -146,7 +261,15 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                 f"{'数字人' if r == 'agent' else '用户'}: {t}"
                 for r, t in transcript[-3:]
             )
-            if await llm_confirm_end(tail, req.evaluator_key):
+            _dbg("H4", "simulate.py:check_termination", "llm_confirm_start", {"tailLen": len(tail)})
+            confirmed = await llm_confirm_end(tail, req.evaluator_key)
+            _dbg(
+                "H4",
+                "simulate.py:check_termination",
+                "llm_confirm_end",
+                {"confirmed": confirmed},
+            )
+            if confirmed:
                 reason = "ended"
                 halt = True
                 return True
@@ -192,5 +315,18 @@ async def simulate_stream(req: SimulateRequest, request: Request):
             )
         except asyncio.CancelledError:
             raise
+        except Exception as e:
+            _dbg_b3_sim(
+                "H7",
+                "simulate.py:event_gen",
+                "unhandled_exception",
+                {"type": type(e).__name__, "message": str(e)[:300]},
+            )
+            yield _sse("error", {"turn": agent_round, "role": "agent", "message": str(e)})
+            reason = "llm_error"
+            yield _sse(
+                "done",
+                {"reason": reason, "total_turns": _agent_turn_count(transcript)},
+            )
 
-    return EventSourceResponse(event_gen())
+    return EventSourceResponse(event_gen(), ping=15)

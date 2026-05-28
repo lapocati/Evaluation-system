@@ -13,6 +13,19 @@ _CONTENT_CHAR_PATTERN = re.compile(
     r"[\u4e00-\u9fffA-Za-z0-9\uFF10-\uFF19\uFF21-\uFF3A\uFF41-\uFF5A]"
 )
 
+CLARIFICATION_SIGNALS = (
+    "什么意思",
+    "没听懂",
+    "再说一遍",
+    "重复一下",
+    "能解释",
+    "不明白",
+    "说清楚",
+    "怎么理解",
+    "啥意思",
+    "再说说",
+)
+
 
 def _count_content_chars(text: str) -> int:
     return len(_CONTENT_CHAR_PATTERN.findall(text))
@@ -20,6 +33,25 @@ def _count_content_chars(text: str) -> int:
 
 def _agent_turns(turns: list[ConversationTurn]) -> list[ConversationTurn]:
     return [t for t in turns if t.role == "agent"]
+
+
+def _is_clarification_request(user_text: str) -> bool:
+    return any(s in user_text for s in CLARIFICATION_SIGNALS)
+
+
+def _user_text_before_agent(turns: list[ConversationTurn], agent_index: int) -> str:
+    """取第 agent_index 个 agent 轮之前、上一个 agent 轮之后的 user 发言。"""
+    agents = _agent_turns(turns)
+    if agent_index <= 0 or agent_index >= len(agents):
+        return ""
+    prev_agent_turn = agents[agent_index - 1].turn
+    curr_agent_turn = agents[agent_index].turn
+    user_parts = [
+        t.text
+        for t in turns
+        if t.role == "user" and prev_agent_turn < t.turn <= curr_agent_turn
+    ]
+    return "\n".join(user_parts)
 
 
 def _levenshtein_sim(a: str, b: str) -> float:
@@ -64,6 +96,9 @@ def evaluate_rule(item: ScoringItem, turns: list[ConversationTurn]) -> tuple[flo
         repeats = 0
         for i in range(1, len(agents)):
             if _levenshtein_sim(agents[i - 1].text, agents[i].text) >= 0.8:
+                user_between = _user_text_before_agent(turns, i)
+                if user_between and _is_clarification_request(user_between):
+                    continue
                 repeats += 1
         score = 1.0 - repeats / (len(agents) - 1)
         if repeats == 0:

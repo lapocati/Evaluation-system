@@ -67,30 +67,60 @@ async function runStream(branchId: string, params: StartParams, signal: AbortSig
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
+  let gotDone = false;
+
+  const flushEvents = () => {
+    while (true) {
+      const crlf = buf.indexOf('\r\n\r\n');
+      const lf = buf.indexOf('\n\n');
+      let sep: number;
+      let sepLen: number;
+      if (crlf >= 0 && (lf < 0 || crlf <= lf)) {
+        sep = crlf;
+        sepLen = 4;
+      } else if (lf >= 0) {
+        sep = lf;
+        sepLen = 2;
+      } else {
+        break;
+      }
+      const raw = buf.slice(0, sep);
+      buf = buf.slice(sep + sepLen);
+      if (eventMarksDone(dispatch(branchId, raw))) gotDone = true;
+    }
+  };
 
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      while (true) {
-        const crlf = buf.indexOf('\r\n\r\n');
-        const lf = buf.indexOf('\n\n');
-        let sep: number;
-        let sepLen: number;
-        if (crlf >= 0 && (lf < 0 || crlf <= lf)) {
-          sep = crlf;
-          sepLen = 4;
-        } else if (lf >= 0) {
-          sep = lf;
-          sepLen = 2;
-        } else {
-          break;
+      buf += decoder.decode(value, { stream: !done });
+      flushEvents();
+      if (done) {
+        if (buf.trim()) {
+          if (eventMarksDone(dispatch(branchId, buf))) gotDone = true;
+          buf = '';
         }
-        const raw = buf.slice(0, sep);
-        buf = buf.slice(sep + sepLen);
-        dispatch(branchId, raw);
+        break;
       }
+    }
+    if (!gotDone) {
+      // #region agent log
+      fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
+        body: JSON.stringify({
+          sessionId: '1793b4',
+          runId: 'post-fix',
+          hypothesisId: 'H6',
+          location: 'simulate.ts:runStream',
+          message: 'stream_end_without_done',
+          data: { branchId, leftoverBufLen: buf.length },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      aborters.delete(branchId);
+      useAppStore.getState().errorConversation(branchId, '连接意外中断，模拟未完成');
     }
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
@@ -99,7 +129,11 @@ async function runStream(branchId: string, params: StartParams, signal: AbortSig
   }
 }
 
-function dispatch(branchId: string, raw: string) {
+function eventMarksDone(event: string): boolean {
+  return event === 'done';
+}
+
+function dispatch(branchId: string, raw: string): string {
   let event = 'message';
   const dataLines: string[] = [];
   for (const rawLine of raw.split('\n')) {
@@ -108,19 +142,48 @@ function dispatch(branchId: string, raw: string) {
     if (line.startsWith('event:')) event = line.slice(6).trim();
     else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
   }
-  if (!dataLines.length) return;
+  if (!dataLines.length) return event;
 
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(dataLines.join('\n'));
   } catch {
-    return;
+    // #region agent log
+    fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
+      body: JSON.stringify({
+        sessionId: '1793b4',
+        hypothesisId: 'H3',
+        location: 'simulate.ts:dispatch',
+        message: 'json_parse_failed',
+        data: { raw: raw.slice(0, 200) },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+    return event;
   }
 
   const store = useAppStore.getState();
   const turn = Number(payload.turn);
   const role = payload.role as TurnRole;
   const text = String(payload.text ?? '');
+
+  // #region agent log
+  fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
+    body: JSON.stringify({
+      sessionId: '1793b4',
+      hypothesisId: event === 'delta' ? 'H2' : 'H3',
+      location: 'simulate.ts:dispatch',
+      message: 'sse_event',
+      data: { event, turn, role, textLen: text.length },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   switch (event) {
     case 'turn_start':
@@ -140,6 +203,25 @@ function dispatch(branchId: string, raw: string) {
       break;
     }
     case 'error': {
+      // #region agent log
+      fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b3a46e' },
+        body: JSON.stringify({
+          sessionId: 'b3a46e',
+          hypothesisId: 'H1',
+          location: 'simulate.ts:dispatch',
+          message: 'sse_error_event',
+          data: {
+            branchId,
+            turn,
+            role,
+            errorMessage: String(payload.message ?? '').slice(0, 400),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       aborters.delete(branchId);
       store.errorConversation(branchId, String(payload.message ?? 'LLM 错误'));
       break;
@@ -147,4 +229,5 @@ function dispatch(branchId: string, raw: string) {
     default:
       break;
   }
+  return event;
 }

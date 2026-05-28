@@ -20,6 +20,20 @@ export async function parseInstruction(
       typeof detail === 'object' && detail !== null
         ? JSON.stringify(detail)
         : String(detail);
+    // #region agent log
+    fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7be968' },
+      body: JSON.stringify({
+        sessionId: '7be968',
+        hypothesisId: 'H1',
+        location: 'parse.ts:parseInstruction',
+        message: 'parse_http_error',
+        data: { status: res.status, msg: msg.slice(0, 400), keyLen: apiKey.length },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
     throw new Error(`HTTP ${res.status}：${msg}`);
   }
   return (await res.json()) as ParseResult;

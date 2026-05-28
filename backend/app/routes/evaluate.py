@@ -21,6 +21,7 @@ async def evaluate(req: EvaluateRequest) -> Report:
             conversation=req.conversation,
             scoring_criteria=req.scoring_criteria,
             evaluator_key=req.evaluator_key,
+            tone_summary=req.tone_summary,
         )
     except Exception as e:
         logger.exception("evaluate failed")

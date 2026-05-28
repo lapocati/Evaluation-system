@@ -90,6 +90,8 @@ export default function ReportPage() {
 
       evaluator_key: evaluatorKey,
 
+      tone_summary: parseResult.tone_summary,
+
     }).catch(() => {
 
       /* 错误已写入 store */
@@ -251,6 +253,8 @@ export default function ReportPage() {
               instruction,
 
               evaluator_key: evaluatorKey,
+
+              tone_summary: parseResult.tone_summary,
 
             }).catch(() => undefined);
 
