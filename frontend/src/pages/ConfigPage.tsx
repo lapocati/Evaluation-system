@@ -63,9 +63,9 @@ export default function ConfigPage() {
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-slate-800">DialogEval · 任务配置</h1>
+        <h1 className="text-2xl font-bold text-slate-800">ConvoMatrix·复杂指令下的多轮对话评测系统</h1>
         <p className="text-sm text-slate-500 mt-1">
-          配置任务指令与模型 Key，启动多轮对话评测。
+          配置任务指令与模型 Key，启动评测
         </p>
       </header>
 
@@ -107,7 +107,7 @@ export default function ConfigPage() {
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
           rows={14}
-          placeholder="粘贴或编写任务指令，或点击上方预置卡片快速填入。"
+          placeholder="自由输入符合结构规范的任务指令，或点击上方预置卡片快速填入。"
           className={`w-full font-mono text-sm rounded-lg border p-3 focus:outline-none focus:ring-1 ${
             instruction.length > 0 && missingFields.length > 0
               ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
