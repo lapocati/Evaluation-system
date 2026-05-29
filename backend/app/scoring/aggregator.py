@@ -121,6 +121,7 @@ def _efficiency(
             weight=criteria_weight,
             score=0.0,
             actual_turns=actual,
+            agent_turns=0,
             invalid_turns=0,
             invalid_breakdown=empty_breakdown,
             reason=f"任务完成度 {task_score:.2f} < {EFFICIENCY_TASK_FLOOR}，效率不适用",
@@ -134,6 +135,7 @@ def _efficiency(
             weight=criteria_weight,
             score=1.0,
             actual_turns=actual,
+            agent_turns=total,
             invalid_turns=0,
             invalid_breakdown=empty_breakdown,
             reason="agent 轮次 ≤ 1，样本不足，默认满分",
@@ -162,14 +164,15 @@ def _efficiency(
     penalty = min(invalid / total, 1.0)
     score = round(1.0 - penalty, 4)
     reason = (
-        f"无效 {invalid}/{total} 轮（空话 {breakdown['filler']}、"
-        f"重复 {breakdown['repeat']}、兜圈 {breakdown['circular']}），"
-        f"占比 {penalty:.2%}，得分 {score:.2f}"
+        f"空话 {breakdown['filler']}、重复 {breakdown['repeat']}、"
+        f"兜圈 {breakdown['circular']}，占比 {round(penalty * 100)}%，"
+        f"得分 {round(score * 100)}%"
     )
     return EfficiencyResult(
         weight=criteria_weight,
         score=score,
         actual_turns=actual,
+        agent_turns=total,
         invalid_turns=invalid,
         invalid_breakdown=breakdown,
         reason=reason,

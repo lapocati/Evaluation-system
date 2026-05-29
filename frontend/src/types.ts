@@ -101,6 +101,7 @@ export interface EfficiencyResult {
   weight: number;
   score: number;
   actual_turns: number;
+  agent_turns: number;
   invalid_turns: number;
   invalid_breakdown: Record<string, number>;
   reason: string;

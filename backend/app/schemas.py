@@ -102,6 +102,7 @@ class EfficiencyResult(BaseModel):
     weight: float
     score: float
     actual_turns: int
+    agent_turns: int
     invalid_turns: int
     invalid_breakdown: dict[str, int]
     reason: str

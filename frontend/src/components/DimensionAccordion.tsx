@@ -26,6 +26,19 @@ function fmtPct(score: number | null): string {
   return `${Math.round(score * 100)}`;
 }
 
+function isSpecialEfficiencyReason(reason: string): boolean {
+  return reason.includes('效率不适用') || reason.includes('样本不足');
+}
+
+function formatEfficiencyDetail(efficiency: EfficiencyResult): string {
+  const b = efficiency.invalid_breakdown;
+  const agentTurns = efficiency.agent_turns ?? efficiency.actual_turns;
+  const pctInvalid =
+    agentTurns > 0 ? Math.round((efficiency.invalid_turns / agentTurns) * 100) : 0;
+  const pctScore = Math.round(efficiency.score * 100);
+  return `空话 ${b.filler ?? 0}、重复 ${b.repeat ?? 0}、兜圈 ${b.circular ?? 0}，占比 ${pctInvalid}%，得分 ${pctScore}%`;
+}
+
 interface DimRowProps {
   dimensionKey: DimensionKey | 'efficiency';
   label: string;
@@ -118,12 +131,13 @@ export default function DimensionAccordion({ dimensions, efficiency }: Props) {
       >
         <div className="text-sm text-slate-700 space-y-1">
           <div>
-            无效 <b>{efficiency.invalid_turns}</b> / <b>{efficiency.actual_turns}</b> 轮：重复{' '}
-            <b>{efficiency.invalid_breakdown.repeat ?? 0}</b>、空话{' '}
-            <b>{efficiency.invalid_breakdown.filler ?? 0}</b>、兜圈{' '}
-            <b>{efficiency.invalid_breakdown.circular ?? 0}</b>
+            无效 <b>{efficiency.invalid_turns}</b> / <b>{efficiency.actual_turns}</b> 轮
           </div>
-          <div className="text-xs text-slate-600">{efficiency.reason}</div>
+          <div className="text-xs text-slate-600">
+            {isSpecialEfficiencyReason(efficiency.reason)
+              ? efficiency.reason
+              : formatEfficiencyDetail(efficiency)}
+          </div>
         </div>
       </DimensionRow>
     </div>
