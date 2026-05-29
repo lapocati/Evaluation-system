@@ -4,7 +4,7 @@ export async function parseInstruction(
   instruction: string,
   apiKey: string,
 ): Promise<ParseResult> {
-  const res = await fetch('/api/parse_instruction', {
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/parse_instruction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ instruction, api_key: apiKey }),
@@ -21,7 +21,7 @@ export async function parseInstruction(
         ? JSON.stringify(detail)
         : String(detail);
     // #region agent log
-    fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+    fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7be968' },
       body: JSON.stringify({

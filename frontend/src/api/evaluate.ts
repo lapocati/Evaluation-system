@@ -43,7 +43,7 @@ export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
 
   let res: Response;
   try {
-    res = await fetch('/api/evaluate', {
+    res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/evaluate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

@@ -99,7 +99,7 @@ export interface DimensionScoreResult {
 
 export interface EfficiencyResult {
   weight: number;
-  score: number;
+  score: number | null;
   actual_turns: number;
   agent_turns: number;
   invalid_turns: number;

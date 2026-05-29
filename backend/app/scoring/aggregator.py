@@ -4,7 +4,7 @@
 - LLM 子项 asyncio.gather 并发（Semaphore 限 8）
 - applicable_branches 过滤（不含本分支 → 不计入分母）
 - 维度内若无任何 applicable item → score = None，weight 不计入 overall
-- 效率：无效轮次占比扣分（空话/重复/兜圈）；task 未完成时效率为 0
+- 效率：无效轮次占比扣分（空话/重复/兜圈）；task 未完成时效率不适用
 - summary 单独再调一次 LLM
 """
 from __future__ import annotations
@@ -116,15 +116,21 @@ def _efficiency(
     actual = max(0, conv.total_turns)
     empty_breakdown = {"filler": 0, "repeat": 0, "circular": 0}
 
-    if task_score is not None and task_score < EFFICIENCY_TASK_FLOOR:
+    if task_score is None or task_score < EFFICIENCY_TASK_FLOOR:
+        if task_score is None:
+            reason = "任务完成度不可用，效率不适用"
+        else:
+            reason = (
+                f"任务完成度 {task_score:.2f} < {EFFICIENCY_TASK_FLOOR}，效率不适用"
+            )
         return EfficiencyResult(
             weight=criteria_weight,
-            score=0.0,
+            score=None,
             actual_turns=actual,
             agent_turns=0,
             invalid_turns=0,
             invalid_breakdown=empty_breakdown,
-            reason=f"任务完成度 {task_score:.2f} < {EFFICIENCY_TASK_FLOOR}，效率不适用",
+            reason=reason,
         )
 
     agents = _agent_turns(conv.turns)
@@ -376,8 +382,9 @@ async def build_report(
         if d.score is not None:
             weighted_sum += d.score * d.weight
             weight_sum += d.weight
-    weighted_sum += efficiency.score * efficiency.weight
-    weight_sum += efficiency.weight
+    if efficiency.score is not None:
+        weighted_sum += efficiency.score * efficiency.weight
+        weight_sum += efficiency.weight
     overall = weighted_sum / weight_sum if weight_sum > 0 else 0.0
 
     advantages, improvements = await _summarize(

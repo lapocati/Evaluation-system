@@ -99,7 +99,7 @@ export const useAppStore = create<AppState>((set) => ({
       const hasMatch = turns.some((t) => sameTurn(t, turn, role));
       if (!hasMatch) {
         // #region agent log
-        fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+        fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
           body: JSON.stringify({

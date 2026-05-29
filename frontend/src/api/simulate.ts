@@ -39,7 +39,7 @@ export function runBranchSimulation(params: StartParams) {
 async function runStream(branchId: string, params: StartParams, signal: AbortSignal) {
   let res: Response;
   try {
-    res = await fetch('/api/simulate/stream', {
+    res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/simulate/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -105,7 +105,7 @@ async function runStream(branchId: string, params: StartParams, signal: AbortSig
     }
     if (!gotDone) {
       // #region agent log
-      fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+      fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
         body: JSON.stringify({
@@ -149,7 +149,7 @@ function dispatch(branchId: string, raw: string): string {
     payload = JSON.parse(dataLines.join('\n'));
   } catch {
     // #region agent log
-    fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+    fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
       body: JSON.stringify({
@@ -171,7 +171,7 @@ function dispatch(branchId: string, raw: string): string {
   const text = String(payload.text ?? '');
 
   // #region agent log
-  fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+  fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '1793b4' },
     body: JSON.stringify({
@@ -204,7 +204,7 @@ function dispatch(branchId: string, raw: string): string {
     }
     case 'error': {
       // #region agent log
-      fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+      fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b3a46e' },
         body: JSON.stringify({

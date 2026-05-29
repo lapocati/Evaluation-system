@@ -100,7 +100,7 @@ class DimensionScoreResult(BaseModel):
 
 class EfficiencyResult(BaseModel):
     weight: float
-    score: float
+    score: Optional[float] = None
     actual_turns: int
     agent_turns: int
     invalid_turns: int
