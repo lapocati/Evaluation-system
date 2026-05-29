@@ -50,7 +50,7 @@ class ScoringCriteria(BaseModel):
 
 class ParseRequest(BaseModel):
     instruction: str
-    api_key: str
+    api_key: str = ""  # 已废弃：服务端从 DEEPSEEK_API_KEY 读取，保留字段仅为兼容旧前端
 
 
 class ParseResponse(BaseModel):

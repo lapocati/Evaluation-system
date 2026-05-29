@@ -13,6 +13,7 @@ _DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-1793b4.log"
 _DEBUG_LOG_B3 = Path(__file__).resolve().parents[3] / "debug-b3a46e.log"
 _DEBUG_LOG_7BE968 = Path(__file__).resolve().parents[3] / "debug-7be968.log"
 _DEBUG_LOG_FB3D39 = Path(__file__).resolve().parents[3] / "debug-fb3d39.log"
+_DEBUG_LOG_BDD1EC = Path(__file__).resolve().parents[3] / "debug-bdd1ec.log"
 
 _RETRYABLE_HTTP = (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError)
 
@@ -88,6 +89,28 @@ class DeepSeekError(Exception):
     """DeepSeek 调用统一异常。"""
 
 
+def _dbg_bdd1ec(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    # #region agent log
+    payload = {
+        "sessionId": "bdd1ec",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    with _DEBUG_LOG_BDD1EC.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    # #endregion
+
+
+def _ensure_api_key(api_key: str) -> str:
+    key = (api_key or "").strip().strip('"').strip("'")
+    if not key:
+        raise DeepSeekError("API Key 为空，无法构造 Authorization 头")
+    return key
+
+
 async def chat(
     messages: list[dict],
     api_key: str,
@@ -96,6 +119,15 @@ async def chat(
     temperature: float = 0.7,
     timeout: float = 120.0,
 ) -> str:
+    api_key = _ensure_api_key(api_key)
+    # #region agent log
+    _dbg_bdd1ec(
+        "H2",
+        "deepseek.py:chat",
+        "auth_header",
+        {"keyLen": len(api_key), "keySuffix": api_key[-4:] if len(api_key) >= 4 else ""},
+    )
+    # #endregion
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -196,6 +228,7 @@ async def chat_stream(
     timeout: float = 120.0,
 ) -> AsyncGenerator[str, None]:
     """SSE 模式逐字符流式返回 content delta（Phase 2 会用到）。"""
+    api_key = _ensure_api_key(api_key)
     msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
     _dbg_b3(
         "H4",

@@ -1,14 +1,29 @@
 import type { ParseResult } from '../types';
+import { apiBaseUrl } from '../lib/apiBase';
 
-export async function parseInstruction(
-  instruction: string,
-  apiKey: string,
-): Promise<ParseResult> {
-  const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
+export async function parseInstruction(instruction: string): Promise<ParseResult> {
+  const apiBase = apiBaseUrl();
+  // #region agent log
+  fetch('http://127.0.0.1:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'bdd1ec' },
+    body: JSON.stringify({
+      sessionId: 'bdd1ec',
+      hypothesisId: 'H5',
+      location: 'parse.ts:parseInstruction',
+      message: 'parse_request',
+      data: {
+        apiBase: apiBase || '(relative)',
+        usesServerKey: true,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   const res = await fetch(`${apiBase}/api/parse_instruction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ instruction, api_key: apiKey }),
+    body: JSON.stringify({ instruction, api_key: '' }),
   });
   // #region agent log
   fetch('http://127.0.0.1:7456/ingest/a0e45155-c3fd-453e-878d-00c592c80c43', {
@@ -69,7 +84,7 @@ export async function parseInstruction(
         hypothesisId: 'H3',
         location: 'parse.ts:parseInstruction',
         message: 'parse_http_error',
-        data: { status: res.status, msg: msg.slice(0, 400), keyLen: apiKey.length },
+        data: { status: res.status, msg: msg.slice(0, 400) },
         timestamp: Date.now(),
       }),
     }).catch(() => {});

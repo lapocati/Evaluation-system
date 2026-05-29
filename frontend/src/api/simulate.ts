@@ -1,4 +1,5 @@
 import type { Branch, ConversationStatus, ScoringCriteria, Turn, TurnRole } from '../types';
+import { apiBaseUrl } from '../lib/apiBase';
 import { runEvaluate } from './evaluate';
 import { useAppStore } from '../store/useAppStore';
 
@@ -40,7 +41,7 @@ export function runBranchSimulation(params: StartParams) {
 async function runStream(branchId: string, params: StartParams, signal: AbortSignal) {
   let res: Response;
   try {
-    res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/simulate/stream`, {
+    res = await fetch(`${apiBaseUrl()}/api/simulate/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),

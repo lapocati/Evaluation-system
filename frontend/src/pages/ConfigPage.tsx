@@ -50,7 +50,7 @@ export default function ConfigPage() {
     setError(null);
     setLoading(true);
     try {
-      const result = await parseInstruction(instruction, evaluatorKey);
+      const result = await parseInstruction(instruction);
       setParseResult(result);
       navigate('/branches');
     } catch (e) {

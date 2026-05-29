@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react';
 
-import type { DimensionKey, ReportProgress } from '../types';
-
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import ChatBubble from '../components/ChatBubble';
+import EvaluationRuntimePanel from '../components/EvaluationRuntimePanel';
 
 import DimensionAccordion from '../components/DimensionAccordion';
 
@@ -241,9 +240,7 @@ export default function ReportPage() {
 
 
       {!reportEntry || reportEntry.status === 'loading' ? (
-
-        <LoadingPanel progress={reportEntry?.progress} />
-
+        <EvaluationRuntimePanel progress={reportEntry?.progress} />
       ) : reportEntry.status === 'error' ? (
 
         <ErrorPanel
@@ -361,44 +358,6 @@ function ViewTabBar({
         );
 
       })}
-
-    </div>
-
-  );
-
-}
-
-
-
-function LoadingPanel({ progress }: { progress?: ReportProgress }) {
-  const DIM_LABEL: Record<DimensionKey, string> = {
-    task_completion: '任务完成',
-    instruction_following: '指令遵循',
-    naturalness: '自然度',
-    branch_handling: '分支处理',
-  };
-
-  let statusText = '正在评测中（包含多次 LLM 调用，可能 10–30 秒）…';
-  if (progress) {
-    if (progress.phase === 'summary') {
-      statusText = '正在生成优势与改进建议…';
-    } else if (progress.phase === 'efficiency') {
-      statusText = '正在计算效率维度…';
-    } else if (progress.currentDimension && progress.currentDimension in DIM_LABEL) {
-      const dim = progress.currentDimension as DimensionKey;
-      statusText = `正在评分：${DIM_LABEL[dim]}（${progress.completedItems}/${progress.totalItems}）`;
-    } else if (progress.totalItems > 0) {
-      statusText = `正在评分子项（${progress.completedItems}/${progress.totalItems}）`;
-    }
-  }
-
-  return (
-
-    <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
-
-      <div className="inline-block w-5 h-5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mr-2 align-middle" />
-
-      {statusText}
 
     </div>
 

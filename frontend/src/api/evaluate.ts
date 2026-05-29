@@ -1,4 +1,5 @@
 import type { Branch, Conversation, Report, ReportProgress, ScoringCriteria } from '../types';
+import { apiBaseUrl } from '../lib/apiBase';
 import { useAppStore } from '../store/useAppStore';
 
 interface RunEvaluateParams {
@@ -107,7 +108,7 @@ export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
 
   store.startReport(branchId);
   const body = buildEvaluateBody(params);
-  const apiBase = import.meta.env.VITE_API_BASE_URL ?? '';
+  const apiBase = apiBaseUrl();
   const streamUrl = `${apiBase}/api/evaluate/stream`;
   // #region agent log
   fetch('http://127.0.0.1:7456/ingest/a0e45155-c3fd-453e-878d-00c592c80c43',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fb3d39'},body:JSON.stringify({sessionId:'fb3d39',hypothesisId:'H1-H3',location:'evaluate.ts:runEvaluate',message:'fetch_stream_start',data:{streamUrl,apiBaseSet:!!import.meta.env.VITE_API_BASE_URL,branchId},timestamp:Date.now()})}).catch(()=>{});

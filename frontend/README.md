@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-访问 `http://localhost:5173`。Vite 已将 `/api/*` 代理到 `http://localhost:8000`，所以必须先把后端起好。
+访问 `http://localhost:5173`。Vite 已将 `/api/*` 代理到 `http://127.0.0.1:8010`，须先在 `backend` 配置 `.env` 并启动后端。
 
 ## 当前状态（Phase 1）
 
