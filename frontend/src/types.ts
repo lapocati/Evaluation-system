@@ -118,8 +118,16 @@ export interface Report {
 
 export type ReportStatus = 'idle' | 'loading' | 'ready' | 'error';
 
+export interface ReportProgress {
+  phase: 'scoring' | 'efficiency' | 'summary';
+  completedItems: number;
+  totalItems: number;
+  currentDimension?: string;
+}
+
 export interface ReportEntry {
   status: ReportStatus;
   data?: Report;
   error?: string;
+  progress?: ReportProgress;
 }

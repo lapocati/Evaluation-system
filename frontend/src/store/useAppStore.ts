@@ -5,6 +5,7 @@ import type {
   ParseResult,
   Report,
   ReportEntry,
+  ReportProgress,
   TurnRole,
 } from '../types';
 
@@ -36,6 +37,7 @@ interface AppState {
   errorConversation: (branchId: string, message: string) => void;
 
   startReport: (branchId: string) => void;
+  updateReportProgress: (branchId: string, progress: ReportProgress) => void;
   setReport: (branchId: string, report: Report) => void;
   errorReport: (branchId: string, message: string) => void;
 }
@@ -166,6 +168,15 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({
       reports: { ...s.reports, [branchId]: { status: 'loading' } },
     })),
+
+  updateReportProgress: (branchId, progress) =>
+    set((s) => {
+      const entry = s.reports[branchId];
+      if (!entry || entry.status !== 'loading') return s;
+      return {
+        reports: { ...s.reports, [branchId]: { ...entry, progress } },
+      };
+    }),
 
   setReport: (branchId, report) =>
     set((s) => ({

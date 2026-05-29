@@ -1,4 +1,5 @@
 import type { Branch, ConversationStatus, ScoringCriteria, Turn, TurnRole } from '../types';
+import { runEvaluate } from './evaluate';
 import { useAppStore } from '../store/useAppStore';
 
 function countAgentTurns(turns: Turn[]): number {
@@ -86,7 +87,7 @@ async function runStream(branchId: string, params: StartParams, signal: AbortSig
       }
       const raw = buf.slice(0, sep);
       buf = buf.slice(sep + sepLen);
-      if (eventMarksDone(dispatch(branchId, raw))) gotDone = true;
+      if (eventMarksDone(dispatch(branchId, raw, params))) gotDone = true;
     }
   };
 
@@ -97,7 +98,7 @@ async function runStream(branchId: string, params: StartParams, signal: AbortSig
       flushEvents();
       if (done) {
         if (buf.trim()) {
-          if (eventMarksDone(dispatch(branchId, buf))) gotDone = true;
+          if (eventMarksDone(dispatch(branchId, buf, params))) gotDone = true;
           buf = '';
         }
         break;
@@ -125,7 +126,12 @@ async function runStream(branchId: string, params: StartParams, signal: AbortSig
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
     aborters.delete(branchId);
-    useAppStore.getState().errorConversation(branchId, (e as Error).message);
+    const errName = (e as Error).name || 'Error';
+    const errMsg = (e as Error).message || errName;
+    // #region agent log
+    fetch('http://127.0.0.1:7456/ingest/a0e45155-c3fd-453e-878d-00c592c80c43',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fb3d39'},body:JSON.stringify({sessionId:'fb3d39',hypothesisId:'H3',location:'simulate.ts:runStream',message:'stream_read_error',data:{branchId,errName,errMsg},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    useAppStore.getState().errorConversation(branchId, `网络异常：${errMsg}`);
   }
 }
 
@@ -133,7 +139,7 @@ function eventMarksDone(event: string): boolean {
   return event === 'done';
 }
 
-function dispatch(branchId: string, raw: string): string {
+function dispatch(branchId: string, raw: string, params: StartParams): string {
   let event = 'message';
   const dataLines: string[] = [];
   for (const rawLine of raw.split('\n')) {
@@ -200,10 +206,14 @@ function dispatch(branchId: string, raw: string): string {
       const total = Number(payload.total_turns ?? 0);
       aborters.delete(branchId);
       store.finishConversation(branchId, reason, total);
+      if (reason === 'ended' || reason === 'max_turns') {
+        prefetchEvaluate(branchId, params);
+      }
       break;
     }
     case 'error': {
       // #region agent log
+      fetch('http://127.0.0.1:7456/ingest/a0e45155-c3fd-453e-878d-00c592c80c43',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fb3d39'},body:JSON.stringify({sessionId:'fb3d39',hypothesisId:'H1',location:'simulate.ts:dispatch',message:'sse_error_event',data:{branchId,turn,role,errorMessage:String(payload.message??'').slice(0,400)},timestamp:Date.now()})}).catch(()=>{});
       fetch('http://localhost:7492/ingest/018f9570-af31-4316-8237-a31d49daba47', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b3a46e' },
@@ -230,4 +240,22 @@ function dispatch(branchId: string, raw: string): string {
       break;
   }
   return event;
+}
+
+function prefetchEvaluate(branchId: string, params: StartParams) {
+  const store = useAppStore.getState();
+  const entry = store.reports[branchId];
+  if (entry?.status === 'loading' || entry?.status === 'ready') return;
+  const conversation = store.conversations[branchId];
+  if (!conversation || conversation.status === 'running') return;
+  void runEvaluate({
+    branch: params.branch,
+    conversation,
+    scoring_criteria: params.scoring_criteria,
+    instruction: params.instruction,
+    evaluator_key: params.evaluator_key,
+    tone_summary: store.parseResult?.tone_summary,
+  }).catch(() => {
+    /* 错误已写入 store */
+  });
 }

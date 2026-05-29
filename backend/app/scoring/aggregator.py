@@ -317,6 +317,14 @@ async def _summarize(
         return [], []
 
 
+async def _notify(on_event, event: str, data: dict) -> None:
+    if on_event is None:
+        return
+    result = on_event(event, data)
+    if asyncio.iscoroutine(result):
+        await result
+
+
 async def build_report(
     *,
     branch: Branch,
@@ -324,6 +332,7 @@ async def build_report(
     scoring_criteria: ScoringCriteria,
     evaluator_key: str,
     tone_summary: str | None = None,
+    on_event=None,
 ) -> Report:
     semaphore = asyncio.Semaphore(LLM_CONCURRENCY)
 
@@ -336,9 +345,13 @@ async def build_report(
         (dim, item) for dim, items in dim_to_items.items() for item in items
     ]
     item_kinds = {item.id: item.item_kind for _, item in flat}
+    total_items = len(flat)
+    completed_items = 0
+    progress_lock = asyncio.Lock()
 
-    tasks = [
-        _score_one_item(
+    async def score_tracked(dim: str, item: ScoringItem) -> ScoreItemResult:
+        nonlocal completed_items
+        result = await _score_one_item(
             item=item,
             conv=conversation,
             branch=branch,
@@ -347,8 +360,33 @@ async def build_report(
             dim_name=dim,
             tone_summary=tone_summary,
         )
-        for dim, item in flat
-    ]
+        async with progress_lock:
+            completed_items += 1
+            done_count = completed_items
+        await _notify(
+            on_event,
+            "progress",
+            {
+                "phase": "scoring",
+                "completed_items": done_count,
+                "total_items": total_items,
+                "current_dimension": dim,
+            },
+        )
+        return result
+
+    await _notify(
+        on_event,
+        "progress",
+        {
+            "phase": "scoring",
+            "completed_items": 0,
+            "total_items": total_items,
+            "current_dimension": flat[0][0] if flat else None,
+        },
+    )
+
+    tasks = [score_tracked(dim, item) for dim, item in flat]
     results: list[ScoreItemResult] = await asyncio.gather(*tasks)
 
     dims: dict[str, DimensionScoreResult] = {}
@@ -370,6 +408,16 @@ async def build_report(
         )
 
     task_score = dims["task_completion"].score
+    await _notify(
+        on_event,
+        "progress",
+        {
+            "phase": "efficiency",
+            "completed_items": total_items,
+            "total_items": total_items,
+            "current_dimension": None,
+        },
+    )
     efficiency = _efficiency(
         criteria_weight=scoring_criteria.efficiency.weight,
         conv=conversation,
@@ -387,6 +435,16 @@ async def build_report(
         weight_sum += efficiency.weight
     overall = weighted_sum / weight_sum if weight_sum > 0 else 0.0
 
+    await _notify(
+        on_event,
+        "progress",
+        {
+            "phase": "summary",
+            "completed_items": total_items,
+            "total_items": total_items,
+            "current_dimension": None,
+        },
+    )
     advantages, improvements = await _summarize(
         branch=branch,
         dims=dims,

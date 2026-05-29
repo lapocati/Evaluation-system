@@ -1,4 +1,5 @@
 """DeepSeek 官方 API 客户端封装。endpoint 与模型名固定，仅暴露 api_key。"""
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -11,6 +12,31 @@ DEFAULT_MODEL = "deepseek-chat"
 _DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-1793b4.log"
 _DEBUG_LOG_B3 = Path(__file__).resolve().parents[3] / "debug-b3a46e.log"
 _DEBUG_LOG_7BE968 = Path(__file__).resolve().parents[3] / "debug-7be968.log"
+_DEBUG_LOG_FB3D39 = Path(__file__).resolve().parents[3] / "debug-fb3d39.log"
+
+_RETRYABLE_HTTP = (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError)
+
+
+def _format_http_error(e: httpx.HTTPError) -> str:
+    detail = str(e).strip()
+    if detail:
+        return f"网络异常：{detail}"
+    return f"网络异常：{type(e).__name__}"
+
+
+def _dbg_fb3d39(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
+    # #region agent log
+    payload = {
+        "sessionId": "fb3d39",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    with _DEBUG_LOG_FB3D39.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    # #endregion
 
 
 def _dbg7(hypothesis_id: str, location: str, message: str, data: dict | None = None) -> None:
@@ -83,7 +109,7 @@ async def chat(
     if response_format_json:
         payload["response_format"] = {"type": "json_object"}
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=min(60.0, timeout))) as client:
         msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
         _dbg7(
             "H4",
@@ -97,21 +123,38 @@ async def chat(
                 "jsonMode": response_format_json,
             },
         )
-        try:
-            resp = await client.post(DEEPSEEK_API_URL, json=payload, headers=headers)
-        except httpx.HTTPError as e:
-            _dbg7(
-                "H2",
-                "deepseek.py:chat",
-                "http_error",
-                {
-                    "type": type(e).__name__,
-                    "message": str(e)[:300],
-                    "msgCount": len(messages),
-                    "msgChars": msg_chars,
-                },
-            )
-            raise DeepSeekError(f"网络异常：{e}") from e
+        last_err: httpx.HTTPError | None = None
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = await client.post(DEEPSEEK_API_URL, json=payload, headers=headers)
+                break
+            except httpx.HTTPError as e:
+                last_err = e
+                _dbg_fb3d39(
+                    "H1",
+                    "deepseek.py:chat",
+                    "http_error",
+                    {"type": type(e).__name__, "message": str(e)[:300], "attempt": attempt + 1},
+                )
+                _dbg7(
+                    "H2",
+                    "deepseek.py:chat",
+                    "http_error",
+                    {
+                        "type": type(e).__name__,
+                        "message": str(e)[:300],
+                        "msgCount": len(messages),
+                        "msgChars": msg_chars,
+                    },
+                )
+                if attempt < 2 and isinstance(e, _RETRYABLE_HTTP):
+                    await asyncio.sleep(1.5 * (attempt + 1))
+                    continue
+                raise DeepSeekError(_format_http_error(e)) from e
+        if resp is None:
+            assert last_err is not None
+            raise DeepSeekError(_format_http_error(last_err)) from last_err
         if resp.status_code != 200:
             _dbg7(
                 "H1",
@@ -187,75 +230,92 @@ async def chat_stream(
         "temperature": temperature,
         "stream": True,
     }
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    last_err: httpx.HTTPError | None = None
+    for attempt in range(3):
         try:
-            async with client.stream(
-                "POST", DEEPSEEK_API_URL, json=payload, headers=headers
-            ) as resp:
-                if resp.status_code != 200:
-                    body = await resp.aread()
-                    body_text = body.decode(errors="replace")
-                    _dbg_b3(
-                        "H1",
-                        "deepseek.py:chat_stream",
-                        "http_non_200",
-                        {
-                            "status": resp.status_code,
-                            "bodyPreview": body_text[:300],
-                            "msgCount": len(messages),
-                            "msgChars": msg_chars,
-                        },
-                    )
-                    _dbg7(
-                        "H1",
-                        "deepseek.py:chat_stream",
-                        "http_non_200",
-                        {
-                            "status": resp.status_code,
-                            "bodyPreview": body_text[:300],
-                            "msgCount": len(messages),
-                            "msgChars": msg_chars,
-                        },
-                    )
-                    raise DeepSeekError(f"HTTP {resp.status_code}: {body_text}")
-                _dbg("H1", "deepseek.py:chat_stream", "stream_open", {"status": resp.status_code})
-                line_count = 0
-                yielded = 0
-                async for line in resp.aiter_lines():
-                    line_count += 1
-                    if not line or not line.startswith("data: "):
-                        continue
-                    data_str = line[6:]
-                    if data_str == "[DONE]":
-                        _dbg(
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout, connect=min(60.0, timeout))
+            ) as client:
+                async with client.stream(
+                    "POST", DEEPSEEK_API_URL, json=payload, headers=headers
+                ) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        body_text = body.decode(errors="replace")
+                        _dbg_b3(
                             "H1",
                             "deepseek.py:chat_stream",
-                            "stream_done",
-                            {"lineCount": line_count, "yielded": yielded},
+                            "http_non_200",
+                            {
+                                "status": resp.status_code,
+                                "bodyPreview": body_text[:300],
+                                "msgCount": len(messages),
+                                "msgChars": msg_chars,
+                            },
                         )
-                        return
-                    try:
-                        chunk = json.loads(data_str)
-                        delta = chunk["choices"][0]["delta"].get("content", "")
-                        if delta:
-                            yielded += 1
-                            if yielded == 1:
-                                _dbg(
-                                    "H1",
-                                    "deepseek.py:chat_stream",
-                                    "first_yield",
-                                    {"deltaLen": len(delta)},
-                                )
-                            yield delta
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
-                _dbg(
-                    "H1",
-                    "deepseek.py:chat_stream",
-                    "stream_exhausted",
-                    {"lineCount": line_count, "yielded": yielded},
-                )
+                        _dbg7(
+                            "H1",
+                            "deepseek.py:chat_stream",
+                            "http_non_200",
+                            {
+                                "status": resp.status_code,
+                                "bodyPreview": body_text[:300],
+                                "msgCount": len(messages),
+                                "msgChars": msg_chars,
+                            },
+                        )
+                        raise DeepSeekError(f"HTTP {resp.status_code}: {body_text}")
+                    _dbg("H1", "deepseek.py:chat_stream", "stream_open", {"status": resp.status_code})
+                    line_count = 0
+                    yielded = 0
+                    async for line in resp.aiter_lines():
+                        line_count += 1
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            _dbg(
+                                "H1",
+                                "deepseek.py:chat_stream",
+                                "stream_done",
+                                {"lineCount": line_count, "yielded": yielded},
+                            )
+                            return
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk["choices"][0]["delta"].get("content", "")
+                            if delta:
+                                yielded += 1
+                                if yielded == 1:
+                                    _dbg(
+                                        "H1",
+                                        "deepseek.py:chat_stream",
+                                        "first_yield",
+                                        {"deltaLen": len(delta)},
+                                    )
+                                yield delta
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+                    _dbg(
+                        "H1",
+                        "deepseek.py:chat_stream",
+                        "stream_exhausted",
+                        {"lineCount": line_count, "yielded": yielded},
+                    )
+            return
         except httpx.HTTPError as e:
+            last_err = e
+            _dbg_fb3d39(
+                "H1",
+                "deepseek.py:chat_stream",
+                "http_error",
+                {
+                    "type": type(e).__name__,
+                    "message": str(e)[:300],
+                    "attempt": attempt + 1,
+                    "msgChars": msg_chars,
+                },
+            )
             _dbg_b3(
                 "H2",
                 "deepseek.py:chat_stream",
@@ -284,4 +344,9 @@ async def chat_stream(
                 "http_error",
                 {"type": type(e).__name__, "message": str(e)[:200]},
             )
-            raise DeepSeekError(f"网络异常：{e}") from e
+            if attempt < 2 and isinstance(e, _RETRYABLE_HTTP):
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            raise DeepSeekError(_format_http_error(e)) from e
+    if last_err is not None:
+        raise DeepSeekError(_format_http_error(last_err)) from last_err

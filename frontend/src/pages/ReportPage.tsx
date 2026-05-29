@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 
+import type { DimensionKey, ReportProgress } from '../types';
+
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import ChatBubble from '../components/ChatBubble';
@@ -188,9 +190,8 @@ export default function ReportPage() {
 
         <h1 className="text-2xl font-bold text-slate-800 mt-1">评测报告</h1>
 
-        <div className="mt-3 flex items-center gap-1.5 text-xs flex-wrap">
-
-          <span className="text-slate-500 mr-1">分支切换：</span>
+        {/* 轻量 segmented control：次级人格分支切换 */}
+        <div className="mt-2 inline-flex items-center flex-wrap rounded-lg bg-slate-100 p-0.5 gap-0.5">
 
           {allBranches.map((b) => {
 
@@ -213,13 +214,13 @@ export default function ReportPage() {
                   navigate(`/report/${b.id}`);
                 }}
 
-                className={`px-2.5 py-1 rounded-md border transition ${
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors ${
 
                   isActive
 
-                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    ? 'bg-indigo-600 text-white shadow-sm'
 
-                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    : 'bg-transparent text-slate-500 hover:text-slate-700'
 
                 }`}
 
@@ -241,7 +242,7 @@ export default function ReportPage() {
 
       {!reportEntry || reportEntry.status === 'loading' ? (
 
-        <LoadingPanel />
+        <LoadingPanel progress={reportEntry?.progress} />
 
       ) : reportEntry.status === 'error' ? (
 
@@ -323,7 +324,9 @@ function ViewTabBar({
 
   return (
 
-    <div className="flex items-center gap-1.5 text-xs flex-wrap">
+    <div className="flex items-center gap-6 border-b border-slate-200 flex-wrap">
+
+      {/* 页面级主导航：underline tab，视觉权重高于分支切换 */}
 
       {VIEW_TABS.map((tab) => {
 
@@ -339,13 +342,13 @@ function ViewTabBar({
 
             onClick={() => onChange(tab.id)}
 
-            className={`px-2.5 py-1 rounded-md border transition ${
+            className={`relative pb-2.5 pt-1 text-sm font-medium transition-colors ${
 
               isActive
 
-                ? 'bg-indigo-600 text-white border-indigo-600'
+                ? 'text-indigo-600 border-b-2 border-indigo-600 -mb-px'
 
-                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                : 'text-slate-500 hover:text-slate-800'
 
             }`}
 
@@ -367,7 +370,27 @@ function ViewTabBar({
 
 
 
-function LoadingPanel() {
+function LoadingPanel({ progress }: { progress?: ReportProgress }) {
+  const DIM_LABEL: Record<DimensionKey, string> = {
+    task_completion: '任务完成',
+    instruction_following: '指令遵循',
+    naturalness: '自然度',
+    branch_handling: '分支处理',
+  };
+
+  let statusText = '正在评测中（包含多次 LLM 调用，可能 10–30 秒）…';
+  if (progress) {
+    if (progress.phase === 'summary') {
+      statusText = '正在生成优势与改进建议…';
+    } else if (progress.phase === 'efficiency') {
+      statusText = '正在计算效率维度…';
+    } else if (progress.currentDimension && progress.currentDimension in DIM_LABEL) {
+      const dim = progress.currentDimension as DimensionKey;
+      statusText = `正在评分：${DIM_LABEL[dim]}（${progress.completedItems}/${progress.totalItems}）`;
+    } else if (progress.totalItems > 0) {
+      statusText = `正在评分子项（${progress.completedItems}/${progress.totalItems}）`;
+    }
+  }
 
   return (
 
@@ -375,7 +398,7 @@ function LoadingPanel() {
 
       <div className="inline-block w-5 h-5 rounded-full border-2 border-indigo-600 border-t-transparent animate-spin mr-2 align-middle" />
 
-      正在评测中（包含多次 LLM 调用，可能 10–30 秒）…
+      {statusText}
 
     </div>
 
