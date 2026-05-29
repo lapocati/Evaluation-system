@@ -13,6 +13,7 @@ evaluation system/
 ├── backend/                       # FastAPI 后端（DeepSeek 调用 / 评分聚合）
 │   ├── app/
 │   │   ├── main.py                # FastAPI 入口、CORS、路由挂载
+│   │   ├── config.py              # DEEPSEEK_API_KEY 环境变量（get_deepseek_key）
 │   │   ├── schemas.py             # Pydantic 数据契约（前后端共享 schema）
 │   │   ├── termination.py         # 对话结束检测（关键词 + LLM 二次确认）
 │   │   ├── llm/
@@ -155,12 +156,12 @@ evaluation system/
 
 ### 4.1 `/config`（ConfigPage）
 
-**职责：** 收集任务指令 + 两个 DeepSeek key，提交解析。
+**职责：** 收集任务指令；模型与 Key 区域为**展示用**（只读占位），真实 DeepSeek Key 由后端环境变量 `DEEPSEEK_API_KEY` 提供。
 
 | 阶段 | 行为 |
 |---|---|
-| 进入 | 读取 store 中已存在的 `instruction` / `agentKey` / `evaluatorKey`（页面间不丢） |
-| 校验 | 必需字段正则：`#Role` / `#Task` / `#Opening Line` / `#Constraints`；Key 正则：`^sk-[A-Za-z0-9]{20,}$` |
+| 进入 | 读取 store 中已存在的 `instruction` / `agentKey` / `evaluatorKey`（页面间不丢；Key 为预置占位假值，不可编辑） |
+| 校验 | 必需字段正则：`#Role` / `#Task` / `#Opening Line` / `#Constraints`；Key 正则：`^sk-[A-Za-z0-9]{20,}$`（占位假 Key 默认已通过） |
 | 点击预置 | 用 PRESETS 的 content 覆写 instruction |
 | 点击"解析指令 →" | `POST /api/parse_instruction` → `setParseResult` → `navigate('/branches')` |
 | 错误 | 顶部红色错误条显示 detail（不弹 alert） |
@@ -216,8 +217,8 @@ evaluation system/
 {
   // —— 配置层 ——
   instruction:    string,
-  agentKey:       string,
-  evaluatorKey:   string,
+  agentKey:       string,   // 展示占位假 Key；请求体仍携带，后端忽略
+  evaluatorKey:   string,   // 展示占位假 Key；请求体仍携带，后端忽略
   parseResult:    ParseResult | null,
 
   // —— 模拟层 ——
@@ -233,7 +234,7 @@ evaluation system/
 
 | Action | 调用方 |
 |---|---|
-| `setInstruction / setAgentKey / setEvaluatorKey` | ConfigPage 输入框 |
+| `setInstruction / setAgentKey / setEvaluatorKey` | ConfigPage（Key 输入框已只读，setter 保留兼容） |
 | `setParseResult` | ConfigPage 解析成功（**会**清空 conversations & reports） |
 | `startConversation / beginTurn / appendDelta / endTurn / finishConversation / errorConversation` | **仅** `api/simulate.ts` |
 | `startReport / setReport / errorReport` | **仅** `api/evaluate.ts` |
@@ -399,7 +400,8 @@ Rules:        max_chars_per_turn | no_repetition | forbidden_words | required_op
 
 ### 9.3 LLM / 评测
 
-- ❌ **禁止**把 `agentKey` / `evaluatorKey` 持久化到 localStorage / cookie / 后端数据库。
+- ❌ **禁止**把 `agentKey` / `evaluatorKey` 持久化到 localStorage / cookie / 后端数据库（store 内仅为展示占位假值）。
+- ✅ **真实** DeepSeek Key 仅存后端环境变量 `DEEPSEEK_API_KEY`（见 `backend/.env.example`）；路由层通过 `app/config.py` 的 `get_deepseek_key()` 读取，**忽略**请求体中的 key 字段。
 - ❌ **禁止**在解析 LLM 返回后跳过 `ParseResponse(**data)` 校验。
 - ❌ **禁止**让 LLM 评分返回非 [0,1] 区间的分数（必须 clamp）。
 - ❌ **禁止**修改 `weight = 0.35/0.25/0.15/0.15/0.10` 的默认权重契约（parser prompt 已写死）。

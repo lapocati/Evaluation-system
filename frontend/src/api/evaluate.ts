@@ -43,7 +43,7 @@ export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
 
   let res: Response;
   try {
-    res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/evaluate`, {
+    res = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/evaluate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -55,11 +55,12 @@ export async function runEvaluate(params: RunEvaluateParams): Promise<Report> {
   }
 
   if (!res.ok) {
-    let detail = '';
+    const bodyText = await res.text();
+    let detail = bodyText;
     try {
-      detail = JSON.stringify(await res.json());
+      detail = bodyText ? JSON.stringify(JSON.parse(bodyText)) : '';
     } catch {
-      detail = await res.text().catch(() => '');
+      /* 非 JSON 响应，保留 bodyText */
     }
     const msg = `HTTP ${res.status}：${detail.slice(0, 300)}`;
     store.errorReport(branchId, msg);

@@ -60,7 +60,9 @@ export default function ReportPage() {
 
   const evaluatorKey = useAppStore((s) => s.evaluatorKey);
 
-  const conversation = useAppStore((s) => s.conversations[branchId]);
+  const conversations = useAppStore((s) => s.conversations);
+
+  const conversation = conversations[branchId];
 
   const reportEntry = useAppStore((s) => s.reports[branchId]);
 
@@ -202,7 +204,14 @@ export default function ReportPage() {
 
                 type="button"
 
-                onClick={() => navigate(`/report/${b.id}`)}
+                onClick={() => {
+                  const target = conversations[b.id];
+                  if (!target || target.status === 'running') {
+                    navigate('/branches');
+                    return;
+                  }
+                  navigate(`/report/${b.id}`);
+                }}
 
                 className={`px-2.5 py-1 rounded-md border transition ${
 

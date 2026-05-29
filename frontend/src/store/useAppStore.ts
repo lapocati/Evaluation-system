@@ -46,8 +46,8 @@ function sameTurn(a: { turn: number; role: TurnRole }, turn: number, role: TurnR
 
 export const useAppStore = create<AppState>((set) => ({
   instruction: '',
-  agentKey: '',
-  evaluatorKey: '',
+  agentKey: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
+  evaluatorKey: 'sk-xxxxxxxxxxxxxxxxxxxxxxxx',
   parseResult: null,
 
   conversations: {},

@@ -18,6 +18,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import get_deepseek_key
 from app.llm.deepseek import DeepSeekError, chat_stream
 from app.prompts.agent import build_agent_system
 from app.prompts.npc import build_npc_system
@@ -152,7 +153,7 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                     messages.append(
                         {"role": "assistant" if r == "agent" else "user", "content": t}
                     )
-                api_key = req.agent_key
+                api_key = get_deepseek_key()
             else:
                 messages = [{"role": "system", "content": npc_sys}]
                 if repeat_streak >= 3:
@@ -166,7 +167,7 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                     messages.append(
                         {"role": "assistant" if r == "user" else "user", "content": t}
                     )
-                api_key = req.evaluator_key
+                api_key = get_deepseek_key()
 
             yield _sse("turn_start", {"turn": round_num, "role": role})
             msg_chars = sum(len(str(m.get("content", ""))) for m in messages)
@@ -259,7 +260,7 @@ async def simulate_stream(req: SimulateRequest, request: Request):
                 for r, t in transcript[-3:]
             )
             _dbg("H4", "simulate.py:check_termination", "llm_confirm_start", {"tailLen": len(tail)})
-            confirmed = await llm_confirm_end(tail, req.evaluator_key)
+            confirmed = await llm_confirm_end(tail, get_deepseek_key())
             _dbg(
                 "H4",
                 "simulate.py:check_termination",

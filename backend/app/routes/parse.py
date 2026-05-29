@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from app.config import get_deepseek_key
 from app.llm.deepseek import DeepSeekError, chat
 from app.prompts.parser import build_parser_messages
 from app.schemas import ParseRequest, ParseResponse
@@ -35,9 +36,13 @@ def _dbg7(hypothesis_id: str, location: str, message: str, data: dict | None = N
 async def parse_instruction(req: ParseRequest) -> ParseResponse:
     messages = build_parser_messages(req.instruction)
     try:
+        api_key = get_deepseek_key()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
         raw = await chat(
             messages,
-            req.api_key,
+            api_key,
             response_format_json=True,
             temperature=0.3,
         )

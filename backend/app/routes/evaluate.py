@@ -3,6 +3,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from app.config import get_deepseek_key
 from app.schemas import EvaluateRequest, Report
 from app.scoring.aggregator import build_report
 
@@ -16,11 +17,15 @@ async def evaluate(req: EvaluateRequest) -> Report:
     if not req.conversation.turns:
         raise HTTPException(status_code=400, detail="对话为空，无法评测")
     try:
+        evaluator_key = get_deepseek_key()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    try:
         report = await build_report(
             branch=req.branch,
             conversation=req.conversation,
             scoring_criteria=req.scoring_criteria,
-            evaluator_key=req.evaluator_key,
+            evaluator_key=evaluator_key,
             tone_summary=req.tone_summary,
         )
     except Exception as e:

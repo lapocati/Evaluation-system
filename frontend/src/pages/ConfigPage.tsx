@@ -169,7 +169,7 @@ function ModelKeyBox(props: {
       <div>
         <div className="text-xs text-slate-500 mb-1">模型选择</div>
         <div className="rounded-md bg-slate-100 border border-slate-200 px-3 py-2 text-sm text-slate-600">
-          {FIXED_MODEL} <span className="text-xs text-slate-400">（固定）</span>
+          {FIXED_MODEL}
         </div>
       </div>
       <div>
@@ -177,7 +177,8 @@ function ModelKeyBox(props: {
         <input
           type="password"
           value={props.keyValue}
-          onChange={(e) => props.onKeyChange(e.target.value)}
+          readOnly
+          disabled
           placeholder="sk-xxxxxxxxxxxxxxxx"
           className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
             hasInput && !props.keyValid
