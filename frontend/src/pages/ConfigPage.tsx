@@ -65,7 +65,7 @@ export default function ConfigPage() {
       <header>
         <h1 className="text-2xl font-bold text-slate-800">ConvoMatrix·复杂指令下的多轮对话评测系统</h1>
         <p className="text-sm text-slate-500 mt-1">
-          配置任务指令与模型 Key，启动评测
+          让 AI 从“会聊天”，走向“能办事”
         </p>
       </header>
 
