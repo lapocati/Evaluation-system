@@ -53,6 +53,8 @@ LLM_CONCURRENCY = 8
 
 FAQ_SOURCE_PATTERN = re.compile(r"FAQ|Knowledge Points|知识库|知识点", re.I)
 NA_REASON_MARKERS = ("不适用", "未询问", "未触发", "未被触发", "用户未问")
+# 从描述回退匹配时忽略过短片段，避免「取消」「连续」等泛词误触发
+_FAQ_DESC_TOKEN_MIN_LEN = 3
 
 
 def _is_applicable(item: ScoringItem, branch_id: str) -> bool:
@@ -77,7 +79,7 @@ def _is_faq_triggered(item: ScoringItem, turns: list[ConversationTurn]) -> bool:
     if keywords:
         return any(k in user_text for k in keywords if len(k.strip()) >= 2)
     desc = re.sub(r"[^\u4e00-\u9fff]", " ", item.description)
-    tokens = [t for t in desc.split() if len(t) >= 2]
+    tokens = [t for t in desc.split() if len(t) >= _FAQ_DESC_TOKEN_MIN_LEN]
     return any(t in user_text for t in tokens[:6])
 
 
@@ -99,7 +101,9 @@ def _should_mark_na(item: ScoringItem, reason: str, turns: list[ConversationTurn
     if item.item_kind == "opening" or item.rule == "required_opening":
         return False
     if _is_faq_item(item) or item.item_kind == "faq_entry":
-        return not _is_faq_triggered(item, turns)
+        if not _is_faq_triggered(item, turns):
+            return True
+        return _reason_indicates_na(reason)
     if item.item_kind == "conditional_response":
         return _reason_indicates_na(reason)
     if item.eval_type == "llm" and is_conditional_item(item):
