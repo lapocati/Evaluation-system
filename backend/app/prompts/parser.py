@@ -56,6 +56,19 @@ PARSER_SYSTEM_PROMPT = """你是 DialogEval 评测系统的"指令解析器"。
 
 重要：Conversation Flow 中若某步骤既有主动部分又有条件子分支，必须拆成两个独立 ScoringItem，分别标记 item_kind，不得合并为一个子项。
 
+【并列多策略 / 隐式条件（无「若」字也须拆分）】
+- 同一步骤内出现**对立或互斥策略**（如「不想配送」vs「能配送」、「挽留」vs「鼓励」）→ **禁止**合并为一个 mandatory_step；必须拆成多个 ScoringItem
+- 无「若/当」字也应写清：description 使用「触发条件：…；期望行为：…」
+- **条件/挽留类策略**（如挽留不想配送的骑手）→ branch_handling + item_kind=conditional_response + applicable_branches 仅含会触发该场景的分支（拒绝型等），**不要**列入配合型
+- **与场景绑定的正向策略**（如鼓励能配送的骑手）→ branch_handling + item_kind=conditional_response + applicable_branches 仅含配合型/愿意配送分支
+- **始终适用**的行为（如提醒注意安全）→ task_completion + item_kind=mandatory_step
+- Call Flow Step 3「挽留不想配送 / 鼓励能配送 / 提醒安全」须拆为 3 条，示例见下
+
+【Call Flow Step 3 拆分正例】（美团飞毛腿类指令）：
+{"id":"bh_step3_retain","description":"触发条件：骑手表示不愿或不能配送；期望行为：尽量挽留","source":"Call Flow Step 3","eval_type":"llm","item_kind":"conditional_response","applicable_branches":["B"]}
+{"id":"bh_step3_encourage","description":"触发条件：骑手表示愿意或能配送；期望行为：鼓励完成配送","source":"Call Flow Step 3","eval_type":"llm","item_kind":"conditional_response","applicable_branches":["A"]}
+{"id":"tc_step3_safety","description":"提醒骑手注意安全","source":"Call Flow Step 3","eval_type":"llm","item_kind":"mandatory_step"}
+
 【Keywords 提取规则】
 - 若原文含占位符变量（如 X单、Y天、Z点、W天、$元，或「大写字母+计量单位」模板），禁止将占位符字面量作为 keyword
 - 含占位符的子项 eval_type 强制为 llm，在 description 中说明 agent 应传达该数值信息（具体数字由运行时填充即可）
@@ -75,7 +88,7 @@ PARSER_SYSTEM_PROMPT = """你是 DialogEval 评测系统的"指令解析器"。
 
 【维度映射规则】
 - Task 核心目标、Call Flow **无条件**步骤节点 → task_completion (llm)，item_kind=mandatory_step
-- Call Flow / Constraints 中的**条件分支**（含「如/若/当/一旦…时/被问及/若拒绝/若坚持」等触发前提）→ branch_handling (llm)，item_kind=conditional_response，description 必须写清「触发条件 + 期望 agent 行为」，并标 applicable_branches 为会触发该场景的分支 id（如拒绝型、质疑型、刁难型）；配合型分支通常不含在内
+- Call Flow / Constraints 中的**条件分支**（含「如/若/当/一旦…时/被问及/若拒绝/若坚持」，或隐式对立策略如「不想配送/能配送」）→ branch_handling (llm)，item_kind=conditional_response，description 必须写清「触发条件 + 期望 agent 行为」，并标 applicable_branches 为会触发该场景的分支 id（如拒绝型、质疑型、刁难型）；配合型分支通常不含在内
 - Knowledge Points / FAQ → task_completion (llm)，item_kind=faq_entry
 - Opening Line → task_completion (rule=required_opening)，item_kind=opening；keywords 不得含占位符字面量
 - Constraints 字数限制（如"30 字以内"）→ instruction_following (rule=max_chars_per_turn)

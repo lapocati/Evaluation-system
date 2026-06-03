@@ -353,6 +353,7 @@ overall = sum(dim_score * dim_weight) / sum(有效维度weight)
 |--------|-------------|
 | Opening Line（含 X/Y 单） | `required_opening` keyword 字面匹配 |
 | Call Flow 1–4 | 可能拆成多个 llm/keyword 子项 |
+| Call Flow Step 3（挽留/鼓励/安全并列） | 归一化 `_split_compound_step_items` 拆为 retain/encourage（branch_handling 条件项）+ safety（mandatory）；配合型分支不评挽留子项 |
 | Knowledge Points (FAQ) | **高概率全部 keyword**，用户不问也扣 |
 | Constraints「如被问及超出职责…」 | 应归 branch_handling 条件项 ✓ |
 

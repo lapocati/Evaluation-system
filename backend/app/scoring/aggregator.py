@@ -55,6 +55,12 @@ FAQ_SOURCE_PATTERN = re.compile(r"FAQ|Knowledge Points|知识库|知识点", re.
 NA_REASON_MARKERS = ("不适用", "未询问", "未触发", "未被触发", "用户未问")
 # 从描述回退匹配时忽略过短片段，避免「取消」「连续」等泛词误触发
 _FAQ_DESC_TOKEN_MIN_LEN = 3
+# 未拆干净的并列多策略 mandatory_step 兜底识别
+_COMPOUND_OPPOSE_PATTERN = re.compile(
+    r"(不想|不愿|不能|无法|拒绝).{0,12}(配送|送)|"
+    r"挽留.{0,20}(不想|不愿|不能)|"
+    r"(挽留|不想).{0,40}(鼓励|能配送|愿意配送)"
+)
 
 
 def _is_applicable(item: ScoringItem, branch_id: str) -> bool:
@@ -97,6 +103,9 @@ def _na_reason_for_item(item: ScoringItem, reason: str) -> str:
 
 def _should_mark_na(item: ScoringItem, reason: str, turns: list[ConversationTurn]) -> bool:
     if item.item_kind == "mandatory_step":
+        text = f"{item.description} {item.source}"
+        if _COMPOUND_OPPOSE_PATTERN.search(text) and _reason_indicates_na(reason):
+            return True
         return False
     if item.item_kind == "opening" or item.rule == "required_opening":
         return False
