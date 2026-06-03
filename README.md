@@ -13,7 +13,7 @@
 - **多分支覆盖**：自动生成配合型、拒绝型、质疑型等用户路径并分别跑测
 - **可解释报告**：五维雷达图 + 每个子项的中文评分理由
 
-详细产品介绍见 [`docs/项目介绍.md`](docs/项目介绍.md)，评分机制见 [`docs/SCORING_MECHANISM.md`](docs/SCORING_MECHANISM.md)。
+详细产品介绍见 [`docs/项目介绍.md`](docs/项目介绍.md)。
 
 ---
 
