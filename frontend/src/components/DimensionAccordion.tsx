@@ -35,7 +35,7 @@ function formatEfficiencyDetail(efficiency: EfficiencyResult): string {
   const agentTurns = efficiency.agent_turns ?? efficiency.actual_turns;
   const pctInvalid =
     agentTurns > 0 ? Math.round((efficiency.invalid_turns / agentTurns) * 100) : 0;
-  const pctScore = Math.round(efficiency.score * 100);
+  const pctScore = fmtPct(efficiency.score);
   return `空话 ${b.filler ?? 0}、重复 ${b.repeat ?? 0}、兜圈 ${b.circular ?? 0}，占比 ${pctInvalid}%，得分 ${pctScore}%`;
 }
 
