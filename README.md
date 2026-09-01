@@ -4,6 +4,13 @@
 
 将任意复杂、格式不统一的任务指令，自动解析为**统一五维评分标准**，通过多分支对话模拟与可解释报告，评测对话式 AI / 数字人「能不能把事办成」。
 
+| 入口 | 说明 |
+|------|------|
+| 本地开发 | 后端 `8010` + 前端 Vite（见下方「快速开始」） |
+| Docker 一键演示 | `docker compose up --build -d` → <http://localhost> |
+| 产品介绍 | [`docs/项目介绍.md`](docs/项目介绍.md) |
+| 评分机制 | [`docs/SCORING_MECHANISM.md`](docs/SCORING_MECHANISM.md) |
+
 ---
 
 ## 核心能力
@@ -13,7 +20,37 @@
 - **多分支覆盖**：自动生成配合型、拒绝型、质疑型等用户路径并分别跑测
 - **可解释报告**：五维雷达图 + 每个子项的中文评分理由
 
-详细产品介绍见 [`docs/项目介绍.md`](docs/项目介绍.md)。
+---
+
+## 系统流程
+
+```mermaid
+flowchart LR
+  paste[粘贴任务指令] --> parse[解析分支与五维标准]
+  parse --> sim[多分支 SSE 双LLM模拟]
+  sim --> score[规则加关键词加语义评分]
+  score --> report[五维雷达与可解释报告]
+```
+
+1. **输入**：粘贴任意格式业务指令（或选用预置 Demo）
+2. **解析**：生成用户分支（persona）+ 统一五维评分标准（含可审计子项）
+3. **模拟**：按分支跑流式多轮对话（Agent LLM ↔ User 模拟器）
+4. **评分**：规则 / 关键词 / LLM 语义三通道并发打分并汇总
+5. **报告**：总分、维度雷达、子项理由、优点与改进建议
+
+---
+
+## 统一五维评分框架
+
+| 维度 | 权重 | 评估内容 |
+|------|------|----------|
+| 任务完成度 | 35% | 核心目标是否达成、流程步骤是否执行、FAQ 是否答准 |
+| 指令遵循 | 25% | 字数限制、禁止词、避免重复等硬性约束 |
+| 自然度 | 15% | 口语化程度、电话沟通感、是否符合角色设定 |
+| 分支处理 | 15% | 条件场景下的应对是否恰当（挽留、超范围回复等） |
+| 效率 | 10% | 是否在合理轮次内完成任务 |
+
+评分点子项还会标注语义类型（`mandatory_step` / `conditional_response` / `faq_entry` / `constraint` / `opening`），按类型分流，避免「一刀切」误评。细节见 [`docs/SCORING_MECHANISM.md`](docs/SCORING_MECHANISM.md)。
 
 ---
 
@@ -105,6 +142,11 @@ npm run dev
 3. 选择分支 **运行** → 观看流式对话
 4. 对话结束后查看 **评测报告**（五维雷达 + 子项理由）
 
+内置高复杂度样例：
+
+- **美团外卖·飞毛腿骑手通知** — 外呼 SOP + FAQ + 条件挽留/鼓励 + 占位符
+- **课程平台·直播升级客服** — 多步 Conversation Flow + 嵌套条件 + 特殊终止场景
+
 ---
 
 ## Docker 部署（生产 / 演示）
@@ -176,6 +218,60 @@ docker compose down
 | `/api/parse_instruction` | POST | 解析任务指令 → 分支 + 评分标准 |
 | `/api/simulate/stream` | POST | SSE 流式双 LLM 对话模拟 |
 | `/api/evaluate` | POST | 对话结束后多维评分 + 报告 |
+| `/api/evaluate/stream` | POST | 评测过程流式进度（可选） |
+
+### 请求示例
+
+**解析指令**
+
+```http
+POST /api/parse_instruction
+Content-Type: application/json
+
+{
+  "instruction": "# Role\n你是客服...\n# Task\n通知用户...\n"
+}
+```
+
+成功时返回 `branches`（含 `npc_persona`）、`scoring_criteria`（五维及子项）、可选 `tone_summary`。  
+说明：请求体里的 `api_key` 字段已废弃，后端只读 `DEEPSEEK_API_KEY`。
+
+**流式模拟**
+
+```http
+POST /api/simulate/stream
+Content-Type: application/json
+
+{
+  "instruction": "...",
+  "branch": { "id": "...", "name": "...", "description": "...", "npc_persona": "..." },
+  "scoring_criteria": { "...": "与 parse 结果一致" }
+}
+```
+
+响应为 SSE 事件流，按轮次推送 Agent / User 文本，直至结束或达最大轮次。
+
+**评测**
+
+```http
+POST /api/evaluate
+Content-Type: application/json
+
+{
+  "instruction": "...",
+  "branch": { "...": "..." },
+  "conversation": {
+    "branch_id": "...",
+    "turns": [{ "turn": 1, "role": "agent", "text": "..." }],
+    "status": "ended",
+    "total_turns": 6
+  },
+  "scoring_criteria": { "...": "..." },
+  "evaluator_key": ""
+}
+```
+
+返回 `overall`、各维度 `dimensions`、`efficiency`，以及 `advantages` / `improvements`。
 
 ---
 
@@ -192,6 +288,18 @@ docker compose down
 
 **Q：评分很慢？**  
 单次评测会对多个子项并发调用 LLM，通常需 10–30 秒，属正常现象。
+
+**Q：本地前端端口不是 5173？**  
+Vite 可能自动落到 5174/5175；后端 CORS 已放行常见本地端口。确认 `frontend/src/lib/apiBase.ts` 指向的后端地址即可。
+
+---
+
+## 已知限制
+
+- 模型供应商当前固定为 DeepSeek，未做多厂商抽象
+- 无 Key 时仅可浏览前端 UI，无法完成解析 / 模拟 / 评分
+- 复杂指令下 LLM 调用次数多，单次评测常见 10–30 秒
+- 前端输入框中的 Key **不会**传到真实调用链路，避免误以为「填了就能用」却未配服务端 `.env`
 
 ---
 
