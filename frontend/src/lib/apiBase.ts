@@ -6,5 +6,8 @@ export function apiBaseUrl(): string {
   if (import.meta.env.DEV) {
     return 'http://127.0.0.1:8010';
   }
-  return import.meta.env.VITE_API_BASE_URL ?? '';
+  return (
+    import.meta.env.VITE_API_BASE_URL ||
+    'https://evaluation-system-api-xziw.onrender.com'
+  );
 }
