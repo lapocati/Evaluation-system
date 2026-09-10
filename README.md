@@ -6,10 +6,13 @@
 
 | 入口 | 说明 |
 |------|------|
+| 公开 Demo | 前端 [evaluation-system-beryl.vercel.app](https://evaluation-system-beryl.vercel.app) ；API [evaluation-system-api-xziw.onrender.com](https://evaluation-system-api-xziw.onrender.com/api/health) |
 | 本地开发 | 后端 `8010` + 前端 Vite（见下方「快速开始」） |
 | Docker 一键演示 | `docker compose up --build -d` → <http://localhost> |
 | 产品介绍 | [`docs/项目介绍.md`](docs/项目介绍.md) |
 | 评分机制 | [`docs/SCORING_MECHANISM.md`](docs/SCORING_MECHANISM.md) |
+
+公开 Demo 的 Key 只在 Render 服务端。免费实例休眠后第一次打开可能要等几十秒。解析 / 模拟 / 评分会消耗部署者的模型额度。
 
 ---
 
